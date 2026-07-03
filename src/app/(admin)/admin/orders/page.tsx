@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { Pagination } from '@/components/ui/pagination';
 import {
   Table,
   TableBody,
@@ -45,10 +47,17 @@ import { generateInvoicePDF } from '@/lib/invoice-generator';
 import { printStickerInvoice } from '@/lib/sticker-generator';
 
 
-export default function OrdersPage() {
+function OrdersContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [currentPage, setCurrentPage] = useState(Math.max(1, parseInt(searchParams.get('page') || '1')));
+
   const [orders, setOrders] = useState<any[]>([]);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [dateFilter, setDateFilter] = useState({
     from: '',
@@ -61,6 +70,25 @@ export default function OrdersPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
   const [settings, setSettings] = useState<any>(null);
+
+  // Debounce search term
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 500);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    if (currentPage > 1) {
+      setCurrentPage(1);
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete('page');
+      router.push(`/admin/orders?${params.toString()}`);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearchTerm, statusFilter, dateFilter.from, dateFilter.to]);
 
   const handleDownloadInvoice = async (order: any) => {
     try {
@@ -91,23 +119,306 @@ export default function OrdersPage() {
       return;
     }
     toast.info('Preparing sticker invoice...');
-    // Open each sticker as a PDF in its own window - same pattern as invoice
     for (const order of toPrint) {
       await printStickerInvoice(order, settings);
     }
   };
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (pageVal = currentPage) => {
+    setLoading(true);
     try {
-      const res = await fetch('/api/orders?all=true');
+      const queryParams = new URLSearchParams({
+        all: 'true',
+        page: pageVal.toString(),
+        limit: '20',
+        search: debouncedSearchTerm,
+        status: statusFilter,
+        from: dateFilter.from,
+        to: dateFilter.to,
+      });
+      const res = await fetch(`/api/orders?${queryParams.toString()}`);
       if (!res.ok) {
         throw new Error(`Failed to load orders: ${res.status} ${res.statusText}`);
       }
-            const data = await res.json();
+      const data = await res.json();
+      // Support both paginated { orders, totalPages, totalCount } and plain array responses
+      if (Array.isArray(data)) {
+        setOrders(data);
+        setTotalPages(1);
+        setTotalCount(data.length);
+      } else {
+        setOrders(data.orders || []);
+        setTotalPages(data.totalPages || 1);
+        setTotalCount(data.totalCount || 0);
+      }
+
+      // Fetch settings for invoice generator
+      const settingsRes = await fetch('/api/settings');
+      if (settingsRes.ok) {
+        setSettings(await settingsRes.json());
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to load orders');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchOrders(currentPage);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage, debouncedSearchTerm, statusFilter, dateFilter.from, dateFilter.to]);
+
+  useEffect(() => {
+    const pageFromParams = Math.max(1, parseInt(searchParams.get('page') || '1'));
+    if (pageFromParams !== currentPage) {
+      setCurrentPage(pageFromParams);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  const filteredOrders = orders;
+
+  const toggleSelectAll = () => {
+    const filteredIds = filteredOrders.map(o => o._id);
+    const areAllSelected = filteredIds.length > 0 && filteredIds.every(id => selectedIds.includes(id));
+
+    if (areAllSelected) {
+      setSelectedIds(prev => prev.filter(id => !filteredIds.includes(id)));
+    } else {
+      setSelectedIds(prev => [...prev, ...filteredIds.filter(id => !prev.includes(id))]);
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const updateStatus = async (id: string, status: string, extraData: any = {}) => {
+    try {
+      const res = await fetch(`/api/orders/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, ...extraData }),
+      });
+
       if (res.ok) {
-        const hasFailures = data.results && data.results.some((r) => !r.success);
+        toast.success(`Order updated successfully`);
+        fetchOrders();
+      } else {
+        toast.error('Failed to update order');
+      }
+    } catch (error) {
+      toast.error('Error updating order');
+    }
+  };
+
+  const handleBulkUpdate = async (status: string) => {
+    if (selectedIds.length === 0) return;
+
+    const result = await Swal.fire({
+      title: 'Bulk Update?',
+      text: `Are you sure you want to update ${selectedIds.length} orders to "${status}"?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#00D1B2',
+      confirmButtonText: 'Yes, update them!',
+    });
+
+    if (!result.isConfirmed) return;
+
+    setBulkActionLoading(true);
+    try {
+      const res = await fetch('/api/admin/orders/bulk', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: selectedIds, status }),
+      });
+
+      if (res.ok) {
+        toast.success(`Bulk update completed successfully`);
+        setSelectedIds([]);
+        fetchOrders();
+      } else {
+        toast.error('Bulk update failed');
+      }
+    } catch (error) {
+      toast.error('Error in bulk update');
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+
+    const result = await Swal.fire({
+      title: 'Bulk Delete?',
+      text: `Are you sure you want to permanently delete ${selectedIds.length} orders? This cannot be undone!`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      confirmButtonText: 'Yes, delete all!',
+    });
+
+    if (!result.isConfirmed) return;
+
+    setBulkActionLoading(true);
+    try {
+      const res = await fetch('/api/admin/orders/bulk', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: selectedIds }),
+      });
+
+      if (res.ok) {
+        toast.success(`Orders deleted successfully`);
+        setSelectedIds([]);
+        fetchOrders();
+      } else {
+        toast.error('Bulk delete failed');
+      }
+    } catch (error) {
+      toast.error('Error in bulk delete');
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
+
+  const exportToCSV = () => {
+    const ordersToExport = selectedIds.length > 0
+      ? orders.filter(o => selectedIds.includes(o._id))
+      : filteredOrders;
+
+    if (ordersToExport.length === 0) {
+      toast.error('No orders to export');
+      return;
+    }
+
+    const headers = [
+      'Order ID',
+      'Date',
+      'Customer',
+      'Email',
+      'Phone',
+      'Address',
+      'Division/State',
+      'Items',
+      'Shipping Charge',
+      'Discount',
+      'Total Amount',
+      'Purchase Cost',
+      'Profit',
+      'Payment Status',
+      'Order Status',
+    ];
+
+    const rows = ordersToExport.map((o: any) => {
+      const shipping = o.shippingAddress || {};
+      const fullAddress = `${shipping.street || ''}, ${shipping.city || ''}`;
+      const itemsList = o.items.map((i: any) => {
+        const variantDesc = [i.color, i.size].filter(Boolean).join('/');
+        return `• ${i.quantity} x ${i.name}${variantDesc ? ` [${variantDesc}]` : ''} (@৳${i.price})`;
+      }).join('\n');
+
+      const totalPurchaseCost = o.items.reduce((acc: number, i: any) => acc + ((i.purchasePrice || 0) * i.quantity), 0);
+      const profit = o.totalAmount - totalPurchaseCost - (o.deliveryCharge || 0);
+
+      return [
+        o._id.toUpperCase(),
+        format(new Date(o.createdAt), 'yyyy-MM-dd HH:mm'),
+        shipping.fullName || o.user?.name || 'Guest',
+        o.user?.email || 'Guest',
+        shipping.phone || 'N/A',
+        fullAddress,
+        shipping.division || shipping.state || 'N/A',
+        itemsList,
+        o.deliveryCharge || 0,
+        o.couponDiscountAmount || 0,
+        o.totalAmount,
+        totalPurchaseCost,
+        Math.round(profit),
+        o.paymentStatus,
+        o.status,
+      ];
+    });
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map((row: any[]) => row.map((cell: any) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `orders_export_${format(new Date(), 'yyyyMMdd_HHmm')}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success('Excel/CSV export started');
+  };
+
+  const deleteOrder = async (id: string) => {
+    const result = await Swal.fire({
+      title: 'Are you sure?',
+      text: "This order will be permanently deleted from the database!",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#00D1B2',
+      cancelButtonColor: '#d33',
+      confirmButtonText: 'Yes, delete it!',
+    });
+
+    if (result.isConfirmed) {
+      try {
+        const res = await fetch(`/api/orders/${id}`, {
+          method: 'DELETE',
+        });
+
+        if (res.ok) {
+          toast.success('Order deleted successfully');
+          fetchOrders();
+        } else {
+          toast.error('Failed to delete order');
+        }
+      } catch (error) {
+        toast.error('Error deleting order');
+      }
+    }
+  };
+
+  const handleSendToSteadfast = async (ids: string[]) => {
+    if (ids.length === 0) return;
+
+    const result = await Swal.fire({
+      title: 'Send to Steadfast?',
+      text: `Are you sure you want to send ${ids.length} order(s) to Steadfast Courier?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#2563eb',
+      confirmButtonText: 'Yes, send now!',
+    });
+
+    if (!result.isConfirmed) return;
+
+    setBulkActionLoading(true);
+    try {
+      const res = await fetch('/api/admin/courier/steadfast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderIds: ids }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        const hasFailures = data.results && data.results.some((r: any) => !r.success);
         if (hasFailures) {
-          const firstFail = data.results.find((r) => !r.success);
+          const firstFail = data.results.find((r: any) => !r.success);
           toast.error(`${data.message}. Reason: ${firstFail?.message || 'Unknown error'}`);
         } else {
           toast.success(data.message);
@@ -210,12 +521,11 @@ export default function OrdersPage() {
                   >
                     <div className="flex items-center justify-between w-full">
                       <span>{status}</span>
-                      <Badge variant="secondary" className="ml-2 text-[10px] px-1.5 py-0">
-                        {status === 'All'
-                          ? orders.length
-                          : orders.filter(o => o.status === status).length
-                        }
-                      </Badge>
+                      {status === 'All' && (
+                        <Badge variant="secondary" className="ml-2 text-[10px] px-1.5 py-0">
+                          {totalCount}
+                        </Badge>
+                      )}
                     </div>
                   </DropdownMenuItem>
                 ))}
@@ -427,10 +737,10 @@ export default function OrdersPage() {
                     <div className="flex items-center justify-end gap-1.5">
                       {order.paymentMethod === 'Manual' && order.paymentStatus === 'Pending' && order.status !== 'Cancelled' && (
                         <div className="flex items-center gap-1">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30" 
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
                             title="Approve Manual Payment"
                             onClick={() => {
                               Swal.fire({
@@ -449,10 +759,10 @@ export default function OrdersPage() {
                           >
                             <CheckCircle className="h-4 w-4" />
                           </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-8 w-8 text-destructive hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30" 
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
                             title="Cancel Order"
                             onClick={() => handleCancelOrder(order._id)}
                           >
@@ -510,6 +820,20 @@ export default function OrdersPage() {
             )}
           </TableBody>
         </Table>
+        {totalPages > 1 && (
+          <div className="py-6 border-t bg-white px-6">
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={(page) => {
+                setCurrentPage(page);
+                const params = new URLSearchParams(searchParams.toString());
+                params.set('page', page.toString());
+                router.push(`?${params.toString()}`);
+              }}
+            />
+          </div>
+        )}
       </div>
 
       <OrderDetailsDialog
@@ -518,7 +842,6 @@ export default function OrdersPage() {
         onOpenChange={setIsDetailsOpen}
         onUpdate={fetchOrders}
       />
-
 
       {bulkActionLoading && (
         <div className="fixed inset-0 z-50 bg-black/20 backdrop-blur-sm flex items-center justify-center">
@@ -532,3 +855,14 @@ export default function OrdersPage() {
   );
 }
 
+export default function OrdersPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-[300px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    }>
+      <OrdersContent />
+    </Suspense>
+  );
+}

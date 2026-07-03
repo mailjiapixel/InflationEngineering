@@ -2,12 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { Plus } from 'lucide-react';
 import useEmblaCarousel from 'embla-carousel-react';
 import Autoplay from 'embla-carousel-autoplay';
-
-import { cn } from '@/lib/utils';
 
 interface Category {
   _id: string;
@@ -24,17 +21,14 @@ export default function CategoryV1({ categories }: CategoryShowcaseProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [scrollSnaps, setScrollSnaps] = useState<number[]>([]);
 
-  const canScroll = categories.length > 6;
-
   // Initialize Embla Carousel with Autoplay and Full Slide Grouping
   const [emblaRef, emblaApi] = useEmblaCarousel(
     {
-      loop: canScroll,
-      align: canScroll ? 'start' : 'center',
-      slidesToScroll: 'auto',
-      watchDrag: canScroll,
+      loop: true,
+      align: 'start',
+      slidesToScroll: 'auto', // Slides a full page at once
     },
-    canScroll ? [Autoplay({ delay: 4000, stopOnInteraction: false, stopOnMouseEnter: true })] : []
+    [Autoplay({ delay: 4000, stopOnInteraction: false, stopOnMouseEnter: true })]
   );
 
   const onSelect = useCallback(() => {
@@ -74,11 +68,7 @@ export default function CategoryV1({ categories }: CategoryShowcaseProps) {
         {/* Embla Carousel Viewport */}
         <div className="relative">
           <div className="overflow-hidden cursor-grab active:cursor-grabbing" ref={emblaRef}>
-            <div className={cn(
-              "flex -ml-4",
-              !canScroll && "lg:justify-center",
-              categories.length < 4 && "md:justify-center"
-            )}>
+            <div className="flex -ml-4">
               {categories.map((category) => (
                 <div
                   key={category._id}
@@ -91,13 +81,10 @@ export default function CategoryV1({ categories }: CategoryShowcaseProps) {
                     <div className="flex flex-col items-center gap-3 py-2 transition-all hover:-translate-y-1">
                       <div className="h-16 w-16 sm:h-20 sm:w-20 lg:h-24 lg:w-24 overflow-hidden rounded-full bg-background border border-muted shadow-sm flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
                         {category.image ? (
-                          <Image
+                          <img
                             src={category.image}
                             alt={category.name}
-                            width={96}
-                            height={96}
                             className="h-full w-full object-cover"
-                            sizes="(max-width: 640px) 64px, (max-width: 1024px) 80px, 96px"
                           />
                         ) : (
                           <Plus className="h-6 w-6 text-muted-foreground" />
@@ -114,21 +101,19 @@ export default function CategoryV1({ categories }: CategoryShowcaseProps) {
           </div>
 
           {/* Pagination Dots */}
-          {canScroll && (
-            <div className="flex justify-center items-center gap-2 mt-8">
-              {scrollSnaps.map((_, index) => (
-                <button
-                  key={index}
-                  onClick={() => scrollTo(index)}
-                  className={`transition-all duration-300 cursor-pointer rounded-full ${index === selectedIndex
-                    ? "w-8 bg-primary h-1.5"
-                    : "w-2 bg-muted-foreground/30 h-1.5 hover:bg-muted-foreground/50"
-                    }`}
-                  aria-label={`Go to slide group ${index + 1}`}
-                />
-              ))}
-            </div>
-          )}
+          <div className="flex justify-center items-center gap-2 mt-8">
+            {scrollSnaps.map((_, index) => (
+              <button
+                key={index}
+                onClick={() => scrollTo(index)}
+                className={`transition-all duration-300 cursor-pointer rounded-full ${index === selectedIndex
+                  ? "w-8 bg-primary h-1.5"
+                  : "w-2 bg-muted-foreground/30 h-1.5 hover:bg-muted-foreground/50"
+                  }`}
+                aria-label={`Go to slide group ${index + 1}`}
+              />
+            ))}
+          </div>
         </div>
       </div>
     </section>

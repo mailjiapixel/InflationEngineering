@@ -371,9 +371,9 @@ export default function OrderDetailsDialog({
                             
                                                          const data = await res.json();
                              if (res.ok) {
-                               const hasFailures = data.results && data.results.some((r) => !r.success);
+                               const hasFailures = data.results && data.results.some((r: any) => !r.success);
                                if (hasFailures) {
-                                 const firstFail = data.results.find((r) => !r.success);
+                                 const firstFail = data.results.find((r: any) => !r.success);
                                  toast.error(`${data.message}. Reason: ${firstFail?.message || 'Unknown error'}`);
                                } else {
                                  toast.success(data.message || `${settings?.courierConfig?.activeProvider} booked successfully!`);

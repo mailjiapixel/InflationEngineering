@@ -19,7 +19,7 @@ interface LogoProps {
 export function Logo({ className, imageClassName, textClassName, showText = true, onClick, sizes, src }: LogoProps) {
   const { brandName, logoUrl } = useSettings();
 
-  const finalBrandName = brandName || "Inflation Engineering";
+  const finalBrandName = brandName || "Hill Victor";
   const finalLogoUrl = src || logoUrl || "/logo.webp";
 
   return (

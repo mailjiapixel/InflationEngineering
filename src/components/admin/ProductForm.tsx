@@ -444,7 +444,7 @@ export function ProductForm({ initialData }: ProductFormProps) {
                   variant="outline" 
                   size="sm" 
                   className="bg-background hover:bg-primary hover:text-white transition-all border-primary/20"
-                  onClick={() => appendVariant({ color: '', size: '', price: form.getValues('price') || '', stock: '', sku: '' })}
+                  onClick={() => appendVariant({ color: '', size: '', price: form.getValues('price') || '', stock: '', sku: '', image: '' })}
                 >
                   <Plus className="mr-2 h-4 w-4" /> Add New Variation
                 </Button>

@@ -47,9 +47,12 @@ export default function ProductDetailsV5Client({ product }: ProductDetailsV5Clie
   const isAdmin = (session?.user as any)?.role === 'admin';
 
   const [quantity, setQuantity] = useState(1);
-  const [selectedColor, setSelectedColor] = useState<string | null>(null);
-  const [selectedSize, setSelectedSize] = useState<string | null>(null);
-  const [activeImage, setActiveImage] = useState(product?.images?.[0] || '/placeholder.png');
+  const defaultVariant = product.variants && product.variants.length > 0 ? product.variants[0] : null;
+  const [selectedColor, setSelectedColor] = useState<string | null>(defaultVariant?.color || null);
+  const [selectedSize, setSelectedSize] = useState<string | null>(defaultVariant?.size || null);
+  const [activeImage, setActiveImage] = useState(
+    (product?.variants && product.variants.length > 0 ? product.variants[0]?.image : product?.images?.[0]) || '/placeholder.png'
+  );
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -70,7 +73,6 @@ export default function ProductDetailsV5Client({ product }: ProductDetailsV5Clie
       .filter(Boolean) as string[],
     [product.variants, selectedColor]
   );
-
   const activeVariant = useMemo(() =>
     (product.variants || []).find(
       (v: any) =>
@@ -80,10 +82,37 @@ export default function ProductDetailsV5Client({ product }: ProductDetailsV5Clie
     [product.variants, selectedColor, selectedSize]
   );
 
+  const allImages = useMemo(() => {
+    const hasVariants = product.variants && product.variants.length > 0;
+    if (hasVariants) {
+      const variantImgs = Array.from(
+        new Set((product.variants || []).map((v: any) => v.image).filter(Boolean))
+      ) as string[];
+      
+      if (activeVariant?.image) {
+        const idx = variantImgs.indexOf(activeVariant.image);
+        if (idx > -1) {
+          variantImgs.splice(idx, 1);
+        }
+        variantImgs.unshift(activeVariant.image);
+      }
+      return variantImgs.length > 0 ? variantImgs : (product.images || []);
+    }
+    return product.images || [];
+  }, [product.images, product.variants, activeVariant?.image]);
+
+  useEffect(() => {
+    if (activeVariant?.image) {
+      setActiveImage(activeVariant.image);
+    }
+  }, [activeVariant]);
+
   useEffect(() => {
     if (!product) return;
     setSelectedColor(uniqueColors[0] || null);
-    setActiveImage(product.images?.[0] || '/placeholder.png');
+    setActiveImage(
+      (product.variants && product.variants.length > 0 ? product.variants[0]?.image : product.images?.[0]) || '/placeholder.png'
+    );
   }, [product?._id, uniqueColors]);
 
   useEffect(() => {
@@ -92,9 +121,12 @@ export default function ProductDetailsV5Client({ product }: ProductDetailsV5Clie
     }
   }, [selectedColor, availableSizes]);
 
-  const displayPrice = activeVariant?.price || product.price;
-  const displaySalePrice = activeVariant?.salePrice || product.salePrice;
-  const displayStock = activeVariant?.stock ?? product.stock;
+  const hasVariants = (uniqueColors.length > 0 || uniqueSizes.length > 0);
+  const currentVariant = activeVariant || defaultVariant;
+
+  const displayPrice = hasVariants ? (currentVariant?.price ?? 0) : product.price;
+  const displaySalePrice = hasVariants ? currentVariant?.salePrice : product.salePrice;
+  const displayStock = hasVariants ? (currentVariant?.stock ?? 0) : (product.stock ?? 0);
 
   const handleAddToCart = () => {
     if (displayStock <= 0) return toast.error('Unavailable');
@@ -104,7 +136,7 @@ export default function ProductDetailsV5Client({ product }: ProductDetailsV5Clie
       price: displaySalePrice || displayPrice,
       basePrice: displayPrice,
       quantity: quantity,
-      image: activeVariant?.image || product.images?.[0],
+      image: activeVariant?.image || (product.variants && product.variants.length > 0 ? product.variants[0]?.image : product.images?.[0]),
       color: selectedColor || undefined,
       size: selectedSize || undefined
     }));
@@ -176,7 +208,7 @@ export default function ProductDetailsV5Client({ product }: ProductDetailsV5Clie
          <div className="absolute inset-0 bg-black/10" />
          
          <div className="absolute bottom-12 left-1/2 -translate-x-1/2 flex gap-4 p-4 bg-white/10 backdrop-blur-3xl rounded-[2.5rem] border border-white/20 shadow-2xl">
-            {product.images?.slice(0, 6).map((img: string, i: number) => (
+            {allImages?.slice(0, 6).map((img: string, i: number) => (
                <button 
                   key={img}
                   onClick={() => setActiveImage(img)}

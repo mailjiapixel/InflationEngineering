@@ -38,12 +38,14 @@ export const proxy = auth(async (req) => {
     }
   }
 
-  // 3. Redirect /dashboard route to home page / for users, and to /admin/dashboard for admins
+  // 3. Redirect /dashboard route to /admin/dashboard for admins, and to /login for non-logged-in users
   if (nextUrl.pathname === "/dashboard" || nextUrl.pathname.startsWith("/dashboard/")) {
     if (role === "admin" || role === "super_admin") {
       return NextResponse.redirect(new URL("/admin/dashboard", nextUrl));
     }
-    return NextResponse.redirect(new URL("/", nextUrl));
+    if (!isLoggedIn) {
+      return NextResponse.redirect(new URL("/login", nextUrl));
+    }
   }
 
   req.headers.set('x-pathname', nextUrl.pathname);

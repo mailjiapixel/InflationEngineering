@@ -28,6 +28,7 @@ import { toggleWishlist } from '@/store/slices/wishlistSlice';
 import { toast } from 'sonner';
 import { useSession } from 'next-auth/react';
 import { Suspense } from 'react';
+import Image from 'next/image';
 import ReviewsSection from '@/components/storefront/ReviewsSection';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -67,8 +68,9 @@ export default function ProductDetailsClient({ product }: ProductDetailsClientPr
   const [selectedImage, setSelectedImage] = useState(0);
   const [zoomPos, setZoomPos] = useState({ x: 0, y: 0, percentageX: 0, percentageY: 0 });
   const [showZoom, setShowZoom] = useState(false);
-  const [selectedColor, setSelectedColor] = useState<string | null>(null);
-  const [selectedSize, setSelectedSize] = useState<string | null>(null);
+  const defaultVariant = product.variants && product.variants.length > 0 ? product.variants[0] : null;
+  const [selectedColor, setSelectedColor] = useState<string | null>(defaultVariant?.color || null);
+  const [selectedSize, setSelectedSize] = useState<string | null>(defaultVariant?.size || null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [eligibility, setEligibility] = useState<any>(null);
@@ -104,6 +106,26 @@ export default function ProductDetailsClient({ product }: ProductDetailsClientPr
     ),
     [product.variants, selectedColor, selectedSize]
   );
+
+  const allImages = useMemo(() => {
+    const hasVariants = product.variants && product.variants.length > 0;
+    if (hasVariants) {
+      const variantImgs = Array.from(
+        new Set((product.variants || []).map((v: any) => v.image).filter(Boolean))
+      ) as string[];
+      
+      if (activeVariant?.image) {
+        const idx = variantImgs.indexOf(activeVariant.image);
+        if (idx > -1) {
+          variantImgs.splice(idx, 1);
+        }
+        variantImgs.unshift(activeVariant.image);
+      }
+      return variantImgs.length > 0 ? variantImgs : (product.images || []);
+    }
+    return product.images || [];
+  }, [product.images, product.variants, activeVariant?.image]);
+
 
   // Auto-select first available options on mount or product change
   useEffect(() => {
@@ -197,24 +219,20 @@ export default function ProductDetailsClient({ product }: ProductDetailsClientPr
 
     // Update main image if variant has one
     if (activeVariant?.image) {
-      const variantImgIndex = (product.images || []).findIndex((img: string) => img === activeVariant.image);
+      const variantImgIndex = (allImages || []).findIndex((img: string) => img === activeVariant.image);
       if (variantImgIndex !== -1) {
         setSelectedImage(variantImgIndex);
       }
     }
-  }, [selectedColor, selectedSize, availableSizes, activeVariant, product.images]);
+  }, [selectedColor, selectedSize, availableSizes, activeVariant, allImages]);
 
-  const displayPrice = activeVariant?.price || product.price;
-  const displaySalePrice = activeVariant?.salePrice || product.salePrice;
   const hasVariants = (uniqueColors.length > 0 || uniqueSizes.length > 0);
-  
-  // Strict stock calculation: If product has variants, stock MUST come from the active variant.
-  // We only fallback to product.stock if the product truly has no variants at all.
-  const displayStock = hasVariants 
-    ? (activeVariant ? (activeVariant.stock ?? 0) : 0)
-    : (product.stock ?? 0);
-    
-  const displaySku = activeVariant?.sku || product.sku;
+  const currentVariant = activeVariant || defaultVariant;
+
+  const displayPrice = hasVariants ? (currentVariant?.price ?? 0) : product.price;
+  const displaySalePrice = hasVariants ? currentVariant?.salePrice : product.salePrice;
+  const displayStock = hasVariants ? (currentVariant?.stock ?? 0) : (product.stock ?? 0);
+  const displaySku = hasVariants ? (currentVariant?.sku ?? '') : product.sku;
 
   // Debug log for troubleshooting stock discrepancies
   useEffect(() => {
@@ -252,7 +270,7 @@ export default function ProductDetailsClient({ product }: ProductDetailsClientPr
       price: displaySalePrice || displayPrice,
       basePrice: displayPrice,
       quantity: finalQuantity,
-      image: activeVariant?.image || product.images?.[0],
+      image: activeVariant?.image || (product.variants && product.variants.length > 0 ? product.variants[0]?.image : product.images?.[0]),
       color: selectedColor || undefined,
       size: selectedSize || undefined
     }));
@@ -424,11 +442,17 @@ export default function ProductDetailsClient({ product }: ProductDetailsClientPr
             onMouseEnter={() => setShowZoom(true)}
             onMouseLeave={() => setShowZoom(false)}
           >
-            {product.images && product.images.length > 0 && selectedImage < product.images.length ? (
+            {allImages && allImages.length > 0 && selectedImage < allImages.length ? (
               <>
-                <img
-                  src={product.images[selectedImage]}
+                <Image
+                  src={allImages[selectedImage]}
                   alt={product.name}
+                  width={400}
+                  height={400}
+                  priority
+                  loading="eager"
+                  fetchPriority="high"
+                  sizes="(max-width: 768px) 100vw, 400px"
                   className="h-full w-full object-contain p-4"
                 />
 
@@ -460,14 +484,14 @@ export default function ProductDetailsClient({ product }: ProductDetailsClientPr
 
           {/* External Zoom Preview Window - Daraz Style */}
           {/* Placed outside the overflow-hidden container so it can overlay the right column */}
-          {showZoom && product.images && product.images.length > 0 && product.images[selectedImage] && (
+          {showZoom && allImages && allImages.length > 0 && allImages[selectedImage] && (
             <div
               className="absolute left-full ml-10 top-0 w-[120%] h-full border-2 border-primary/20 rounded-2xl bg-white shadow-2xl z-50 pointer-events-none overflow-hidden hidden lg:block animate-in fade-in zoom-in-95 duration-200"
             >
               <div
                 className="w-full h-full bg-no-repeat"
                 style={{
-                  backgroundImage: `url(${product.images[selectedImage]})`,
+                  backgroundImage: `url(${allImages[selectedImage]})`,
                   backgroundSize: '300%', // Zoom level
                   backgroundPosition: `${zoomPos.percentageX}% ${zoomPos.percentageY}%`,
                 }}
@@ -482,14 +506,15 @@ export default function ProductDetailsClient({ product }: ProductDetailsClientPr
         </div>
 
         <div className="flex gap-4 overflow-auto pb-2 scrollbar-none">
-          {product.images?.map((img: string, i: number) => (
+          {allImages?.map((img: string, i: number) => (
             <button
               key={i}
               className={`relative h-20 w-20 flex-shrink-0 rounded-md border-2 overflow-hidden transition-all ${selectedImage === i ? 'border-primary ring-2 ring-primary/20 scale-105' : 'border-muted hover:border-primary/50'
                 }`}
               onClick={() => setSelectedImage(i)}
+              aria-label={`View product thumbnail image ${i + 1}`}
             >
-              <img src={img} alt="" className="h-full w-full object-cover" />
+              <Image src={img} alt="" width={80} height={80} className="h-full w-full object-cover" />
             </button>
           ))}
         </div>
@@ -605,13 +630,12 @@ export default function ProductDetailsClient({ product }: ProductDetailsClientPr
                         key={color}
                         disabled={isOutOfStock}
                         onClick={() => setSelectedColor(color)}
-                        className={`px-4 py-2 text-xs font-bold transition-all border ${
-                          selectedColor === color
+                        className={`px-4 py-2 text-xs font-bold transition-all border ${selectedColor === color
                             ? 'bg-primary/5 border-primary text-primary shadow-sm'
                             : isOutOfStock
-                            ? 'bg-muted/30 border-dashed text-muted-foreground/50 cursor-not-allowed'
-                            : 'border-muted-foreground/20 text-muted-foreground hover:border-primary/50'
-                        }`}
+                              ? 'bg-muted/30 border-dashed text-muted-foreground/50 cursor-not-allowed'
+                              : 'border-muted-foreground/20 text-muted-foreground hover:border-primary/50'
+                          }`}
                       >
                         {color}
                         {isOutOfStock && <span className="block text-[8px] mt-0.5 opacity-50">Sold Out</span>}
@@ -639,7 +663,7 @@ export default function ProductDetailsClient({ product }: ProductDetailsClientPr
                         onClick={() => setSelectedSize(sizeName)}
                         className={`min-w-[48px] h-12 flex flex-col items-center justify-center rounded-xl border-2 font-bold transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:grayscale disabled:scale-100 disabled:cursor-not-allowed ${selectedSize === sizeName
                           ? 'border-primary bg-primary/5 ring-4 ring-primary/10 text-primary'
-                          : isAvailable 
+                          : isAvailable
                             ? 'border-muted hover:border-primary/30 text-muted-foreground'
                             : 'border-muted/50 border-dashed text-muted-foreground/30'
                           }`}
@@ -677,6 +701,7 @@ export default function ProductDetailsClient({ product }: ProductDetailsClientPr
                 size="icon"
                 className="h-full rounded-none px-4 hover:bg-muted"
                 onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                aria-label="Decrease quantity"
               >
                 <Minus className="h-4 w-4" />
               </Button>
@@ -687,6 +712,7 @@ export default function ProductDetailsClient({ product }: ProductDetailsClientPr
                 className="h-full rounded-none px-4 hover:bg-muted"
                 onClick={() => setQuantity(Math.min(displayStock || 0, quantity + 1))}
                 disabled={quantity >= (displayStock || 0)}
+                aria-label="Increase quantity"
               >
                 <Plus className="h-4 w-4" />
               </Button>
@@ -729,14 +755,14 @@ export default function ProductDetailsClient({ product }: ProductDetailsClientPr
             <Button
               size="lg"
               variant="outline"
-              className="w-full h-14 rounded-full font-black text-xs uppercase tracking-[0.2em] border-2 border-[#25D366] text-[#25D366] hover:bg-[#25D366] hover:text-white transition-all hover:scale-[1.01] active:scale-95 flex items-center justify-center gap-2"
+              className="w-full h-14 rounded-full font-black text-xs uppercase tracking-[0.2em] border-2 border-[#075E54] text-[#075E54] hover:bg-[#075E54] hover:text-white transition-all hover:scale-[1.01] active:scale-95 flex items-center justify-center gap-2"
               onClick={() => {
                 const message = encodeURIComponent(`Hi, I'm interested in ${product.name}. Price: ${CURRENCY_SYMBOL}${Math.round(displaySalePrice || displayPrice)}`);
-                
+
                 // Parse whatsappNumber robustly
                 let cleanNumber = (whatsappNumber || '').trim();
                 let phone = '';
-                
+
                 if (cleanNumber.includes('wa.me/')) {
                   const parts = cleanNumber.split('wa.me/');
                   phone = parts[parts.length - 1];
@@ -750,19 +776,19 @@ export default function ProductDetailsClient({ product }: ProductDetailsClientPr
                 } else {
                   phone = cleanNumber.replace(/[^0-9]/g, '');
                 }
-                
+
                 // Strip any query parameters or non-digit chars
                 phone = phone.split('?')[0].replace(/[^0-9]/g, '');
-                
+
                 window.open(`https://wa.me/${phone}?text=${message}`, '_blank');
               }}
             >
-              <svg 
-                className="h-5 w-5 fill-current" 
-                viewBox="0 0 24 24" 
+              <svg
+                className="h-5 w-5 fill-current"
+                viewBox="0 0 24 24"
                 xmlns="http://www.w3.org/2000/svg"
               >
-                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.067 2.877 1.215 3.076.149.198 2.095 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.067 2.877 1.215 3.076.149.198 2.095 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
               </svg>
               Order via WhatsApp
             </Button>

@@ -48,8 +48,9 @@ export default function ProductDetailsV2Client({ product }: ProductDetailsV2Clie
   const isAdmin = (session?.user as any)?.role === 'admin';
 
   const [quantity, setQuantity] = useState(1);
-  const [selectedColor, setSelectedColor] = useState<string | null>(null);
-  const [selectedSize, setSelectedSize] = useState<string | null>(null);
+  const defaultVariant = product.variants && product.variants.length > 0 ? product.variants[0] : null;
+  const [selectedColor, setSelectedColor] = useState<string | null>(defaultVariant?.color || null);
+  const [selectedSize, setSelectedSize] = useState<string | null>(defaultVariant?.size || null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
@@ -81,9 +82,31 @@ export default function ProductDetailsV2Client({ product }: ProductDetailsV2Clie
     [product.variants, selectedColor, selectedSize]
   );
 
-  const displayPrice = activeVariant?.price || product.price;
-  const displaySalePrice = activeVariant?.salePrice || product.salePrice;
-  const displayStock = activeVariant?.stock ?? product.stock;
+  const allImages = useMemo(() => {
+    const hasVariants = product.variants && product.variants.length > 0;
+    if (hasVariants) {
+      const variantImgs = Array.from(
+        new Set((product.variants || []).map((v: any) => v.image).filter(Boolean))
+      ) as string[];
+      
+      if (activeVariant?.image) {
+        const idx = variantImgs.indexOf(activeVariant.image);
+        if (idx > -1) {
+          variantImgs.splice(idx, 1);
+        }
+        variantImgs.unshift(activeVariant.image);
+      }
+      return variantImgs.length > 0 ? variantImgs : (product.images || []);
+    }
+    return product.images || [];
+  }, [product.images, product.variants, activeVariant?.image]);
+
+  const hasVariants = (uniqueColors.length > 0 || uniqueSizes.length > 0);
+  const currentVariant = activeVariant || defaultVariant;
+
+  const displayPrice = hasVariants ? (currentVariant?.price ?? 0) : product.price;
+  const displaySalePrice = hasVariants ? currentVariant?.salePrice : product.salePrice;
+  const displayStock = hasVariants ? (currentVariant?.stock ?? 0) : (product.stock ?? 0);
 
   useEffect(() => {
     if (!product) return;
@@ -120,7 +143,7 @@ export default function ProductDetailsV2Client({ product }: ProductDetailsV2Clie
       price: displaySalePrice ?? displayPrice,
       basePrice: displayPrice,
       quantity: quantity,
-      image: activeVariant?.image || product.images?.[0],
+      image: activeVariant?.image || (product.variants && product.variants.length > 0 ? product.variants[0]?.image : product.images?.[0]),
       color: selectedColor || undefined,
       size: selectedSize || undefined
     }));
@@ -188,7 +211,7 @@ export default function ProductDetailsV2Client({ product }: ProductDetailsV2Clie
       {/* Left: Vertical Image List (Luxury Style) */}
       <div className="lg:col-span-7 space-y-8">
         <div className="grid grid-cols-1 gap-6">
-          {product.images?.map((img: string, i: number) => (
+          {allImages?.map((img: string, i: number) => (
             <div key={i} className="relative aspect-[3/4] rounded-[3rem] overflow-hidden bg-neutral-50 dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800 shadow-2xl shadow-black/5 group">
               <Image 
                 src={img} 

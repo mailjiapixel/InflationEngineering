@@ -15,6 +15,7 @@ import { fbEvent } from '@/lib/fpixel';
 import { ttEvent } from '@/lib/tiktok';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 
 import { useSession } from 'next-auth/react';
 
@@ -60,6 +61,32 @@ export function QuickViewModal({ product, isOpen, onClose }: QuickViewModalProps
     [product.variants, selectedColor, selectedSize]
   );
 
+  const hasVariants = product.variants && product.variants.length > 0;
+  const currentVariant = activeVariant || (hasVariants ? product.variants[0] : null);
+
+  const displayPrice = hasVariants ? (currentVariant?.price ?? 0) : product.price;
+  const displaySalePrice = hasVariants ? currentVariant?.salePrice : product.salePrice;
+  const displayStock = hasVariants ? (currentVariant?.stock ?? 0) : (product.stock ?? 0);
+  const displaySku = hasVariants ? (currentVariant?.sku ?? '') : product.sku;
+
+  const allImages = useMemo(() => {
+    if (hasVariants) {
+      const variantImgs = Array.from(
+        new Set((product.variants || []).map((v: any) => v.image).filter(Boolean))
+      ) as string[];
+      
+      if (activeVariant?.image) {
+        const idx = variantImgs.indexOf(activeVariant.image);
+        if (idx > -1) {
+          variantImgs.splice(idx, 1);
+        }
+        variantImgs.unshift(activeVariant.image);
+      }
+      return variantImgs.length > 0 ? variantImgs : (product.images || []);
+    }
+    return product.images || [];
+  }, [product.images, product.variants, activeVariant?.image, hasVariants]);
+
   useEffect(() => {
     if (isOpen) {
       const initialColor = uniqueColors[0] || null;
@@ -72,7 +99,9 @@ export function QuickViewModal({ product, isOpen, onClose }: QuickViewModalProps
       const initialSize = initialSizes[0] || null;
       setSelectedSize(initialSize);
       setQuantity(1);
-      setActiveImage(product.images?.[0] || '/placeholder.jpg');
+
+      const defaultVar = product.variants && product.variants.length > 0 ? product.variants[0] : null;
+      setActiveImage(defaultVar?.image || product.images?.[0] || '/placeholder.jpg');
 
       // Track ViewContent for Quick View
       const viewContentPayload = {
@@ -80,7 +109,7 @@ export function QuickViewModal({ product, isOpen, onClose }: QuickViewModalProps
         content_category: product.categories?.[0]?.name || 'Uncategorized',
         content_ids: [product._id],
         content_type: 'product',
-        value: product.salePrice || product.price,
+        value: displaySalePrice || displayPrice,
         currency: 'BDT'
       };
       const trackingUser = {
@@ -91,7 +120,7 @@ export function QuickViewModal({ product, isOpen, onClose }: QuickViewModalProps
       fbEvent('ViewContent', viewContentPayload, trackingUser);
       ttEvent('ViewContent', viewContentPayload, trackingUser);
     }
-  }, [isOpen, uniqueColors, product.variants, product.images, session]);
+  }, [isOpen, uniqueColors, product.variants, product.images, session, displayPrice, displaySalePrice]);
 
   useEffect(() => {
     if (selectedSize == null || !availableSizes.includes(selectedSize)) {
@@ -102,11 +131,11 @@ export function QuickViewModal({ product, isOpen, onClose }: QuickViewModalProps
   useEffect(() => {
     if (activeVariant?.image) {
       setActiveImage(activeVariant.image);
+    } else if (hasVariants) {
+      const firstVarWithImg = (product.variants || []).find((v: any) => v.image);
+      setActiveImage(firstVarWithImg?.image || product.images?.[0] || '/placeholder.jpg');
     }
-  }, [activeVariant]);
-
-  const displayPrice = activeVariant?.price || product.price;
-  const displaySalePrice = activeVariant?.salePrice || product.salePrice;
+  }, [activeVariant, hasVariants, product.variants, product.images]);
 
   const router = useRouter();
 
@@ -119,7 +148,7 @@ export function QuickViewModal({ product, isOpen, onClose }: QuickViewModalProps
       price: (displaySalePrice !== undefined && displaySalePrice !== null) ? displaySalePrice : displayPrice,
       basePrice: displayPrice,
       quantity: quantity,
-      image: activeVariant?.image || product.images?.[0],
+      image: activeImage,
       color: selectedColor || undefined,
       size: selectedSize || undefined
     }));
@@ -147,18 +176,18 @@ export function QuickViewModal({ product, isOpen, onClose }: QuickViewModalProps
     } else {
       toast.success(`${product.name} added to cart`);
     }
-    
+
     onClose();
   };
 
-  const discountPercentage = product.price && product.salePrice
-    ? Math.round(((product.price - product.salePrice) / product.price) * 100)
+  const discountPercentage = displayPrice && displaySalePrice
+    ? Math.round(((displayPrice - displaySalePrice) / displayPrice) * 100)
     : 0;
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-5xl w-[95vw] p-0 overflow-hidden bg-white border-none rounded-none shadow-2xl [&>button:not(.custom-close)]:hidden">
-        <button 
+        <button
           onClick={onClose}
           className="custom-close absolute right-4 top-4 z-[100] p-2 bg-red-500 hover:bg-red-600 text-white rounded-sm shadow-xl transition-all"
         >
@@ -169,24 +198,27 @@ export function QuickViewModal({ product, isOpen, onClose }: QuickViewModalProps
           {/* Left: Sticky Image Section */}
           <div className="w-full md:w-[50%] bg-[#f8f8f8] relative md:sticky md:top-0 h-fit md:h-full flex flex-col items-center justify-center border-r border-neutral-100">
             <div className="relative w-full aspect-square flex items-center justify-center p-0">
-              <img
+              <Image
                 src={activeImage}
                 alt={product.name}
+                width={400}
+                height={400}
+                priority
                 className="w-full h-full object-contain mix-blend-multiply transition-all duration-700"
               />
             </div>
 
             {/* Thumbnails at the bottom of sticky image */}
-            {product.images?.length > 1 && (
+            {allImages?.length > 1 && (
               <div className="flex gap-2 overflow-x-auto py-4 w-full justify-center scrollbar-hide px-4 absolute bottom-0 bg-white/20 backdrop-blur-sm">
-                {product.images.map((img: string, idx: number) => (
+                {allImages.map((img: string, idx: number) => (
                   <button
                     key={idx}
                     onClick={() => setActiveImage(img)}
                     className={`h-16 w-16 flex-shrink-0 border-2 rounded-none overflow-hidden transition-all duration-300 ${activeImage === img ? 'border-primary' : 'border-white opacity-60 hover:opacity-100'
                       }`}
                   >
-                    <img src={img} alt="" className="h-full w-full object-cover" />
+                    <Image src={img} alt="" width={64} height={64} className="h-full w-full object-cover" />
                   </button>
                 ))}
               </div>
@@ -210,23 +242,27 @@ export function QuickViewModal({ product, isOpen, onClose }: QuickViewModalProps
 
             <div className="flex items-baseline gap-3 mb-4 pb-4 border-b border-gray-100">
               <span className="text-3xl font-bold text-primary">
-                ৳{Math.round(activeVariant?.salePrice ?? activeVariant?.price ?? product.salePrice ?? product.price)}
+                ৳{Math.round(displaySalePrice || displayPrice)}
               </span>
-              {(activeVariant?.salePrice ?? product.salePrice) != null && (
+              {displaySalePrice != null && (
                 <span className="text-lg line-through text-gray-400">
-                  ৳{Math.round(activeVariant?.price ?? product.price)}
+                  ৳{Math.round(displayPrice)}
                 </span>
               )}
             </div>
 
             <div className="space-y-1 mb-6 text-sm">
               <div className="flex items-center gap-2">
-                <span className={`h-2 w-2 rounded-none ${product.stock > 0 ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                <span className={`h-2 w-2 rounded-none ${displayStock > 0 ? 'bg-green-500' : 'bg-red-500'}`}></span>
                 <span className="font-medium text-gray-600">
-                  {product.stock > 0 ? `In stock (${product.stock} units)` : 'Out of stock'}
+                  {displayStock > 0 ? `In stock (${displayStock} units)` : 'Out of stock'}
                 </span>
-                <span className="text-gray-300 mx-1">|</span>
-                <span className="text-gray-500 uppercase">SKU: {product.sku || 'N/A'}</span>
+                {displaySku && (
+                  <>
+                    <span className="text-gray-300 mx-1">|</span>
+                    <span className="text-gray-500 uppercase">SKU: {displaySku}</span>
+                  </>
+                )}
               </div>
             </div>
 
@@ -341,7 +377,7 @@ export function QuickViewModal({ product, isOpen, onClose }: QuickViewModalProps
                 Buy Now
               </Button>
 
-              <button 
+              <button
                 onClick={() => {
                   const addToWishlistPayload = {
                     content_name: product.name,

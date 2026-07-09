@@ -73,7 +73,7 @@ const productSchema = z.object({
     salePrice: z.union([z.coerce.number().min(0), z.literal('')]).optional(),
     stock: z.union([z.coerce.number().min(0), z.literal('')]).optional(),
     sku: z.string().optional(),
-    image: z.string().optional()
+    image: z.string().min(1, 'Variation image is required')
   })).default([]),
 });
 

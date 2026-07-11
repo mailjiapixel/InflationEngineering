@@ -45,6 +45,9 @@ export interface IGlobalSettings extends Document {
     redx?: {
       apiKey?: string;
     };
+    bdCourier?: {
+      apiKey?: string;
+    };
   };
   subscriptionConfig?: {
     activationThreshold?: number;

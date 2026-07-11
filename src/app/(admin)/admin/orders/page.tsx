@@ -29,7 +29,8 @@ import {
   ChevronDown,
   Printer,
   FileText,
-  Filter as FilterIcon
+  Filter as FilterIcon,
+  Search
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -479,22 +480,32 @@ function OrdersContent() {
 
   return (
     <div className="flex-1 space-y-4 px-0 py-4 md:p-8">
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Order Management</h2>
-          <p className="text-muted-foreground text-sm">Review, fulfillment and track shop orders.</p>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex-shrink-0">
+          <h2 className="text-2xl md:text-3xl font-bold tracking-tight whitespace-nowrap">Order Management</h2>
+          <p className="text-muted-foreground text-xs md:text-sm hidden sm:block">Review, fulfillment and track shop orders.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+        <Button onClick={exportToCSV} className="bg-primary text-primary-foreground hover:bg-primary/90 font-bold shrink-0">
+          <Download className="mr-2 h-4 w-4" /> Export
+        </Button>
+      </div>
+
+      {/* Search and Date Range Row (1 Row) */}
+      <div className="flex flex-wrap md:flex-nowrap items-center gap-2 w-full">
+        <div className="relative w-full md:w-80 shrink-0">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search name, phone, email or ID..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full md:w-72"
+            className="pl-8 w-full h-10"
           />
+        </div>
 
+        <div className="block md:hidden w-full sm:w-auto">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="h-10">
+              <Button variant="outline" className="h-10 w-full">
                 <FilterIcon className="mr-2 h-4 w-4" />
                 {statusFilter === 'All' ? 'All Status' : statusFilter}
                 <ChevronDown className="ml-2 h-3 w-3 opacity-50" />
@@ -532,40 +543,68 @@ function OrdersContent() {
               </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
-
-          <div className="flex items-center gap-2 bg-muted/50 p-1 rounded-md border">
-            <Input
-              type="date"
-              className="h-8 w-36 border-none bg-transparent focus-visible:ring-0"
-              value={dateFilter.from}
-              onChange={(e) => setDateFilter(prev => ({ ...prev, from: e.target.value }))}
-            />
-            <span className="text-muted-foreground text-xs">to</span>
-            <Input
-              type="date"
-              className="h-8 w-36 border-none bg-transparent focus-visible:ring-0"
-              value={dateFilter.to}
-              onChange={(e) => setDateFilter(prev => ({ ...prev, to: e.target.value }))}
-            />
-          </div>
-          <Button variant="outline" onClick={exportToCSV}>
-            <Download className="mr-2 h-4 w-4" /> Export
-          </Button>
-          {(statusFilter !== 'All' || dateFilter.from || dateFilter.to || searchTerm) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setStatusFilter('All');
-                setDateFilter({ from: '', to: '' });
-                setSearchTerm('');
-              }}
-              className="text-xs text-muted-foreground hover:text-primary"
-            >
-              Clear All
-            </Button>
-          )}
         </div>
+
+        <div className="flex items-center gap-2 bg-muted/50 p-1 rounded-md border w-full md:w-auto h-10">
+          <Input
+            type="date"
+            className="h-8 w-full md:w-36 border-none bg-transparent focus-visible:ring-0"
+            value={dateFilter.from}
+            onChange={(e) => setDateFilter(prev => ({ ...prev, from: e.target.value }))}
+          />
+          <span className="text-muted-foreground text-xs">to</span>
+          <Input
+            type="date"
+            className="h-8 w-full md:w-36 border-none bg-transparent focus-visible:ring-0"
+            value={dateFilter.to}
+            onChange={(e) => setDateFilter(prev => ({ ...prev, to: e.target.value }))}
+          />
+        </div>
+
+        {(statusFilter !== 'All' || dateFilter.from || dateFilter.to || searchTerm) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setStatusFilter('All');
+              setDateFilter({ from: '', to: '' });
+              setSearchTerm('');
+            }}
+            className="text-xs text-muted-foreground hover:text-primary shrink-0"
+          >
+            Clear All
+          </Button>
+        )}
+      </div>
+
+      {/* Status Tabs Row (Desktop only - Full Width Grid) */}
+      <div className="hidden md:grid md:grid-cols-8 gap-2 pb-2 border-b">
+        {[
+          { label: 'All', value: 'All' },
+          { label: 'Placed', value: 'Order Placed' },
+          { label: 'Confirmed', value: 'Confirmed' },
+          { label: 'Paid', value: 'Paid' },
+          { label: 'Ready', value: 'Ready for Delivery' },
+          { label: 'Released', value: 'Released for Delivery' },
+          { label: 'Delivered', value: 'Delivered' },
+          { label: 'Cancelled', value: 'Cancelled' }
+        ].map((status) => {
+          const isActive = statusFilter === status.value;
+          return (
+            <button
+              key={status.value}
+              onClick={() => setStatusFilter(status.value)}
+              className={`w-full py-2 text-xs font-semibold rounded-md transition-all duration-200 text-center truncate ${
+                isActive
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'bg-background hover:bg-muted text-muted-foreground border border-input'
+              }`}
+              title={status.label}
+            >
+              {status.label}
+            </button>
+          );
+        })}
       </div>
 
       <div className="rounded-md border bg-background overflow-hidden relative">

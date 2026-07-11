@@ -85,6 +85,30 @@ export async function POST(req: NextRequest) {
     const { items, shippingAddress, paymentMethod, useWallet, couponCode, manualPaymentDetails } = validation.data;
     const clientProvidedDeliveryCharge = validation.data.deliveryCharge;
 
+    await connectToDatabase();
+
+    // Check for pending/unconfirmed orders ('Order Placed')
+    const queryConditions: any[] = [];
+    if (sessionUser?.user?.id) {
+      queryConditions.push({ user: sessionUser.user.id });
+    }
+    if (shippingAddress.phone) {
+      queryConditions.push({ 'shippingAddress.phone': shippingAddress.phone });
+    }
+
+    if (queryConditions.length > 0) {
+      const existingPendingOrder = await Order.findOne({
+        $or: queryConditions,
+        status: 'Order Placed'
+      });
+
+      if (existingPendingOrder) {
+        return NextResponse.json({
+          message: 'You already have a pending order. Please wait for it to be confirmed before placing another order.'
+        }, { status: 400 });
+      }
+    }
+
     const conn = await connectToDatabase();
 
     // Fetch Settings

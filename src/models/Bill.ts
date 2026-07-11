@@ -15,6 +15,7 @@ export interface IBill extends Document {
   items: IBillItem[];
   subtotal: number;
   deliveryCharge: number;
+  serviceFee: number;
   discountType: 'fixed' | 'percentage';
   discountValue: number;
   discount: number;
@@ -25,6 +26,8 @@ export interface IBill extends Document {
   currentBillDue: number;
   status: 'Paid' | 'Due';
   expectedReceivableDate?: Date;
+  documentType?: 'offer' | 'chalan' | 'bill';
+  convertedFrom?: mongoose.Types.ObjectId | string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -45,6 +48,7 @@ const BillSchema: Schema<IBill> = new Schema(
     ],
     subtotal: { type: Number, required: true, min: 0 },
     deliveryCharge: { type: Number, default: 0, min: 0 },
+    serviceFee: { type: Number, default: 0, min: 0 },
     discountType: { type: String, enum: ['fixed', 'percentage'], default: 'fixed' },
     discountValue: { type: Number, default: 0, min: 0 },
     discount: { type: Number, default: 0, min: 0 },
@@ -55,6 +59,8 @@ const BillSchema: Schema<IBill> = new Schema(
     currentBillDue: { type: Number, default: 0, min: 0 },
     status: { type: String, enum: ['Paid', 'Due'], default: 'Due' },
     expectedReceivableDate: { type: Date },
+    documentType: { type: String, enum: ['offer', 'chalan', 'bill'], default: 'bill' },
+    convertedFrom: { type: Schema.Types.ObjectId, ref: 'Bill' },
   },
   { timestamps: true }
 );

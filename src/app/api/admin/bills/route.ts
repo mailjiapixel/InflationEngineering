@@ -12,10 +12,17 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const filter = searchParams.get('filter'); // 'all', 'paid', 'due'
+    const type = searchParams.get('type') || 'bill'; // 'offer', 'chalan', 'bill'
     
     await connectToDatabase();
 
     let query: any = {};
+    if (type === 'bill') {
+      query.$or = [{ documentType: 'bill' }, { documentType: { $exists: false } }];
+    } else {
+      query.documentType = type;
+    }
+
     if (filter === 'paid') {
       query.status = 'Paid';
     } else if (filter === 'due') {
@@ -45,6 +52,7 @@ export async function POST(req: NextRequest) {
       items,
       subtotal,
       deliveryCharge,
+      serviceFee,
       discountType,
       discountValue,
       discount,
@@ -55,6 +63,8 @@ export async function POST(req: NextRequest) {
       currentBillDue,
       status,
       expectedReceivableDate,
+      documentType,
+      convertedFrom
     } = body;
 
     if (!clientName || !clientPhone || !clientAddress || !items || items.length === 0) {
@@ -63,16 +73,29 @@ export async function POST(req: NextRequest) {
 
     await connectToDatabase();
 
-    // Generate unique sequential invoice number
-    const lastBill = await Bill.findOne().sort({ createdAt: -1 });
+    // Generate unique sequential document number
+    const docType = documentType || 'bill';
+    const lastDoc = await Bill.findOne({ documentType: docType }).sort({ createdAt: -1 });
+    
+    let lastBillForFallback = null;
+    if (!lastDoc && docType === 'bill') {
+      lastBillForFallback = await Bill.findOne({ documentType: { $exists: false } }).sort({ createdAt: -1 });
+    }
+    const matchedDoc = lastDoc || lastBillForFallback;
+
     let nextNum = 101;
-    if (lastBill && lastBill.invoiceNo) {
-      const match = lastBill.invoiceNo.match(/\d+/);
+    if (matchedDoc && matchedDoc.invoiceNo) {
+      const match = matchedDoc.invoiceNo.match(/\d+/);
       if (match) {
         nextNum = parseInt(match[0], 10) + 1;
       }
     }
-    const invoiceNo = String(nextNum).padStart(7, '0');
+
+    let prefix = 'INV-';
+    if (docType === 'offer') prefix = 'OFF-';
+    else if (docType === 'chalan') prefix = 'CH-';
+
+    const invoiceNo = `${prefix}${String(nextNum).padStart(7, '0')}`;
 
     const newBill = new Bill({
       clientName,
@@ -82,6 +105,7 @@ export async function POST(req: NextRequest) {
       items,
       subtotal,
       deliveryCharge,
+      serviceFee: serviceFee || 0,
       discountType,
       discountValue,
       discount,
@@ -92,9 +116,50 @@ export async function POST(req: NextRequest) {
       currentBillDue,
       status,
       expectedReceivableDate: status === 'Due' && expectedReceivableDate ? new Date(expectedReceivableDate) : undefined,
+      documentType: docType,
+      convertedFrom: convertedFrom || undefined
     });
 
     await newBill.save();
+
+    // Log to ledger if it is a final Bill (not offers/chalans)
+    if (docType === 'bill') {
+      try {
+        const { logLedgerTransaction } = await import('@/lib/ledgerHelper');
+        
+        // Debit Accounts Receivable by the grand total of the bill
+        await logLedgerTransaction(
+          'AR',
+          'debit',
+          gTotal,
+          `Bill Generated for ${clientName}`,
+          invoiceNo
+        );
+
+        // If client paid any cash upfront
+        if (cashIn > 0) {
+          // Debit Cash (increases cash asset)
+          await logLedgerTransaction(
+            'CASH',
+            'debit',
+            cashIn,
+            `Cash Paid Upfront for Bill ${invoiceNo}`,
+            invoiceNo
+          );
+          // Credit Accounts Receivable (decreases receivable asset)
+          await logLedgerTransaction(
+            'AR',
+            'credit',
+            cashIn,
+            `Upfront payment credit for Bill ${invoiceNo}`,
+            invoiceNo
+          );
+        }
+      } catch (err) {
+        console.error('Error logging to ledger:', err);
+      }
+    }
+
     return NextResponse.json(newBill, { status: 201 });
   } catch (error: any) {
     console.error('Error creating bill:', error);

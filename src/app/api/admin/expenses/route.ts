@@ -77,6 +77,22 @@ export async function POST(req: NextRequest) {
     await connectToDatabase();
     
     const expense = await Expense.create(safePayload);
+
+    // Log to ledger
+    try {
+      const { logLedgerTransaction } = await import('@/lib/ledgerHelper');
+      // Credit Cash (decreases cash asset)
+      await logLedgerTransaction(
+        'CASH',
+        'credit',
+        amount,
+        `Expense Paid: ${title} (${category})`,
+        expense._id.toString()
+      );
+    } catch (err) {
+      console.error('Error logging expense to ledger:', err);
+    }
+
     return NextResponse.json(expense, { status: 201 });
   } catch (error) {
     console.error('Error creating expense:', error);

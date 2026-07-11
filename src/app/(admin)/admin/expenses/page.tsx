@@ -23,12 +23,22 @@ import { ExpenseForm } from '@/components/admin/ExpenseForm';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
+import { Pagination } from '@/components/ui/pagination';
+import { Input } from '@/components/ui/input';
 
 export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<any>(null);
+  
+  const [searchTerm, setSearchTerm] = useState('');
+  const [dateFilter, setDateFilter] = useState({ from: '', to: '' });
+  const [currentPage, setCurrentPage] = useState(1);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, dateFilter.from, dateFilter.to]);
 
   const fetchExpenses = async () => {
     setLoading(true);
@@ -73,6 +83,30 @@ export default function ExpensesPage() {
     }
   };
 
+  const filteredExpenses = expenses.filter((exp) => {
+    const term = searchTerm.toLowerCase();
+    const title = exp.title?.toLowerCase() || '';
+    const category = exp.category?.toLowerCase() || '';
+    const matchesSearch = title.includes(term) || category.includes(term);
+
+    let matchesDate = true;
+    if (dateFilter.from) {
+      matchesDate = matchesDate && new Date(exp.date) >= new Date(dateFilter.from + 'T00:00:00');
+    }
+    if (dateFilter.to) {
+      matchesDate = matchesDate && new Date(exp.date) <= new Date(dateFilter.to + 'T23:59:59');
+    }
+
+    return matchesSearch && matchesDate;
+  });
+
+  const ITEMS_PER_PAGE = 20;
+  const totalPages = Math.ceil(filteredExpenses.length / ITEMS_PER_PAGE);
+  const paginatedExpenses = filteredExpenses.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -100,8 +134,47 @@ export default function ExpensesPage() {
       </div>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4">
           <CardTitle>All Expenses</CardTitle>
+          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+            <div className="relative w-full md:w-72">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by title or category..."
+                className="pl-8"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-2 bg-muted/50 p-1 rounded-md border text-sm">
+              <Input
+                type="date"
+                className="h-8 w-36 border-none bg-transparent focus-visible:ring-0"
+                value={dateFilter.from}
+                onChange={(e) => setDateFilter(prev => ({ ...prev, from: e.target.value }))}
+              />
+              <span className="text-muted-foreground text-xs">to</span>
+              <Input
+                type="date"
+                className="h-8 w-36 border-none bg-transparent focus-visible:ring-0"
+                value={dateFilter.to}
+                onChange={(e) => setDateFilter(prev => ({ ...prev, to: e.target.value }))}
+              />
+            </div>
+            {(dateFilter.from || dateFilter.to || searchTerm) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setDateFilter({ from: '', to: '' });
+                  setSearchTerm('');
+                }}
+                className="text-xs text-muted-foreground hover:text-primary"
+              >
+                Clear All
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           <Table>
@@ -124,14 +197,14 @@ export default function ExpensesPage() {
                     </div>
                   </TableCell>
                 </TableRow>
-              ) : expenses.length === 0 ? (
+              ) : filteredExpenses.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center py-10 text-muted-foreground">
                     No expenses found.
                   </TableCell>
                 </TableRow>
               ) : (
-                expenses.map((expense) => (
+                paginatedExpenses.map((expense) => (
                   <TableRow key={expense._id}>
                     <TableCell>{format(new Date(expense.date), 'dd MMM yyyy')}</TableCell>
                     <TableCell className="font-medium">{expense.title}</TableCell>
@@ -165,6 +238,15 @@ export default function ExpensesPage() {
               )}
             </TableBody>
           </Table>
+          {totalPages > 1 && (
+            <div className="py-4 border-t bg-background px-6">
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={(page) => setCurrentPage(page)}
+              />
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

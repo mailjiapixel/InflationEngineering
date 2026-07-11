@@ -170,6 +170,16 @@ export async function PATCH(
       );
 
       await dbSession.commitTransaction();
+
+      if (order.paymentStatus !== 'Paid' && updatedOrder?.paymentStatus === 'Paid') {
+        try {
+          const { logOrderPaymentToLedger } = await import('@/lib/ledgerHelper');
+          await logOrderPaymentToLedger(updatedOrder);
+        } catch (ledgerErr) {
+          console.error('[Ledger] Error logging payment in single update:', ledgerErr);
+        }
+      }
+
       return NextResponse.json(updatedOrder);
 
     } catch (error) {

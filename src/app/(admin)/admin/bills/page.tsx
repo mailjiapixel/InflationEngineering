@@ -72,6 +72,7 @@ export default function ClientBillsPage() {
     { name: '', quantity: 1, price: 0 }
   ]);
   const [deliveryCharge, setDeliveryCharge] = useState<number>(0);
+  const [serviceFee, setServiceFee] = useState<number>(0);
   const [discountType, setDiscountType] = useState<'fixed' | 'percentage'>('fixed');
   const [discountValue, setDiscountValue] = useState<number>(0);
   const [prevDue, setPrevDue] = useState<number>(0);
@@ -96,7 +97,7 @@ export default function ClientBillsPage() {
   const fetchBills = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/admin/bills?filter=${statusFilter}`);
+      const res = await fetch(`/api/admin/bills?filter=${statusFilter}&type=bill`);
       if (!res.ok) throw new Error('Failed to fetch bills');
       const data = await res.json();
       setBills(data);
@@ -136,7 +137,7 @@ export default function ClientBillsPage() {
   const discount = discountType === 'percentage'
     ? Math.round((subtotal * discountValue) / 100)
     : discountValue;
-  const total = Math.max(0, subtotal + deliveryCharge - discount);
+  const total = Math.max(0, subtotal + deliveryCharge + serviceFee - discount);
   const gTotal = total + prevDue;
   const currentBillDue = Math.max(0, gTotal - cashIn);
   const calculatedStatus = currentBillDue <= 0 ? 'Paid' : 'Due';
@@ -256,6 +257,7 @@ export default function ClientBillsPage() {
         items: validItems,
         subtotal,
         deliveryCharge,
+        serviceFee,
         discountType,
         discountValue,
         discount,
@@ -265,7 +267,8 @@ export default function ClientBillsPage() {
         cashIn,
         currentBillDue,
         status: calculatedStatus,
-        expectedReceivableDate: calculatedStatus === 'Due' ? expectedReceivableDate : undefined
+        expectedReceivableDate: calculatedStatus === 'Due' ? expectedReceivableDate : undefined,
+        documentType: 'bill'
       };
 
       const res = await fetch('/api/admin/bills', {
@@ -302,6 +305,7 @@ export default function ClientBillsPage() {
     setClientAddress('');
     setBillItems([{ name: '', quantity: 1, price: 0 }]);
     setDeliveryCharge(0);
+    setServiceFee(0);
     setDiscountType('fixed');
     setDiscountValue(0);
     setPrevDue(0);
@@ -825,6 +829,17 @@ export default function ClientBillsPage() {
                   </div>
                 </div>
 
+                <div className="space-y-2">
+                  <Label htmlFor="serviceFee">Service Fee (৳) <span className="text-muted-foreground font-normal text-xs">— Optional</span></Label>
+                  <Input
+                    id="serviceFee"
+                    type="number"
+                    value={serviceFee || ''}
+                    placeholder="0"
+                    onChange={(e) => setServiceFee(Math.max(0, parseFloat(e.target.value) || 0))}
+                  />
+                </div>
+
                 <div className="grid grid-cols-3 gap-2 items-end">
                   <div className="space-y-2 col-span-1">
                     <Label>Discount Type</Label>
@@ -894,6 +909,12 @@ export default function ClientBillsPage() {
                   <div className="flex justify-between">
                     <span>Delivery Charge:</span>
                     <span>+ ৳{deliveryCharge.toLocaleString()}</span>
+                  </div>
+                )}
+                {serviceFee > 0 && (
+                  <div className="flex justify-between">
+                    <span>Service Fee:</span>
+                    <span>+ ৳{serviceFee.toLocaleString()}</span>
                   </div>
                 )}
                 {discount > 0 && (
@@ -1034,6 +1055,12 @@ export default function ClientBillsPage() {
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Delivery Charge</span>
                       <span>+ ৳{Math.round(selectedBill.deliveryCharge).toLocaleString()}</span>
+                    </div>
+                  )}
+                  {selectedBill.serviceFee > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Service Fee</span>
+                      <span>+ ৳{Math.round(selectedBill.serviceFee).toLocaleString()}</span>
                     </div>
                   )}
                   {selectedBill.discount > 0 && (

@@ -84,12 +84,32 @@ const data = {
           url: "/admin/orders",
         },
         {
+          title: "Offers / Quotations",
+          url: "/admin/offers",
+        },
+        {
+          title: "Delivery Challans",
+          url: "/admin/chalans",
+        },
+        {
           title: "Client Bills",
           url: "/admin/bills",
         },
         {
+          title: "Suppliers / Vendors",
+          url: "/admin/suppliers",
+        },
+        {
+          title: "Supplier Bills",
+          url: "/admin/supplier-bills",
+        },
+        {
           title: "Expenses",
           url: "/admin/expenses",
+        },
+        {
+          title: "Accounts Ledger",
+          url: "/admin/ledger",
         },
       ],
     },

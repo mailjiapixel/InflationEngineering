@@ -1,6 +1,6 @@
 'use client'; 
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { ShoppingCart, CheckCircle2, ShieldCheck, Truck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 export default function OrderForm({ content, settings }: { content: any; settings: any }) {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [isPendingOrderBlocked, setIsPendingOrderBlocked] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -21,6 +22,32 @@ export default function OrderForm({ content, settings }: { content: any; setting
     thana: '',
     quantity: content.defaultQuantity || 1,
   });
+
+  useEffect(() => {
+    if (!formData.phone || formData.phone.trim().length < 11) {
+      setIsPendingOrderBlocked(false);
+      return;
+    }
+
+    const checkPendingOrder = async () => {
+      try {
+        const res = await fetch(`/api/orders/check-pending?phone=${encodeURIComponent(formData.phone.trim())}`);
+        if (res.ok) {
+          const { hasPending } = await res.json();
+          if (hasPending) {
+            setIsPendingOrderBlocked(true);
+            toast.error("আপনার একটি পেন্ডিং অর্ডার রয়েছে। সেটি কনফার্ম হওয়ার আগে নতুন অর্ডার করা যাবে না।");
+          } else {
+            setIsPendingOrderBlocked(false);
+          }
+        }
+      } catch (err) {
+        console.error("Error checking pending order:", err);
+      }
+    };
+
+    checkPendingOrder();
+  }, [formData.phone]);
 
   const isInsideDhaka = (district: string) => {
     const d = (district || '').toLowerCase().trim();
@@ -198,10 +225,10 @@ export default function OrderForm({ content, settings }: { content: any; setting
 
           <Button 
             type="submit" 
-            disabled={loading}
+            disabled={loading || isPendingOrderBlocked}
             className="w-full h-14 rounded-2xl font-black text-xl gap-3 shadow-lg shadow-primary/20 hover:scale-[1.02] transition-transform"
           >
-            {loading ? 'প্রসেসিং হচ্ছে...' : <><ShoppingCart className="h-6 w-6" /> {content.buttonText}</>}
+            {loading ? 'প্রসেসিং হচ্ছে...' : isPendingOrderBlocked ? 'পেন্ডিং অর্ডার রয়েছে' : <><ShoppingCart className="h-6 w-6" /> {content.buttonText}</>}
           </Button>
 
           <div className="flex items-center justify-center gap-6 text-[10px] uppercase font-bold opacity-50 tracking-widest">

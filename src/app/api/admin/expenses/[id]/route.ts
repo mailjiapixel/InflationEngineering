@@ -41,6 +41,28 @@ export async function PUT(
     if (!expense) {
       return NextResponse.json({ message: 'Expense not found' }, { status: 404 });
     }
+
+    // Update ledger entry if amount or title changed
+    try {
+      const LedgerTransaction = (await import('@/models/LedgerTransaction')).default;
+      const { recalculateLedgerBalance, logLedgerTransaction } = await import('@/lib/ledgerHelper');
+      
+      // Delete old ledger entries for this expense reference
+      await LedgerTransaction.deleteMany({ reference: id });
+
+      // Log the updated expense
+      await logLedgerTransaction(
+        'CASH',
+        'credit',
+        expense.amount,
+        `Expense Paid: ${expense.title} (${expense.category})`,
+        expense._id.toString()
+      );
+      // Recalculate Cash balance
+      await recalculateLedgerBalance('CASH');
+    } catch (err) {
+      console.error('Error updating ledger on expense update:', err);
+    }
     
     return NextResponse.json(expense);
   } catch (error) {
@@ -69,6 +91,17 @@ export async function DELETE(
     const expense = await Expense.findOneAndDelete({ _id: id });
     if (!expense) {
       return NextResponse.json({ message: 'Expense not found' }, { status: 404 });
+    }
+
+    // Delete related ledger entries and recalculate CASH balance
+    try {
+      const LedgerTransaction = (await import('@/models/LedgerTransaction')).default;
+      const { recalculateLedgerBalance } = await import('@/lib/ledgerHelper');
+      
+      await LedgerTransaction.deleteMany({ reference: id });
+      await recalculateLedgerBalance('CASH');
+    } catch (err) {
+      console.error('Error updating ledger on expense delete:', err);
     }
     
     return NextResponse.json({ message: 'Expense deleted successfully' });

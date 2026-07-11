@@ -42,6 +42,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ message: 'Bill not found' }, { status: 404 });
     }
 
+    const prevCashInValue = bill.cashIn || 0;
+
     // Update fields
     const {
       clientName,
@@ -60,6 +62,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       currentBillDue,
       status,
       expectedReceivableDate,
+      documentType,
+      convertedFrom,
     } = body;
 
     if (clientName !== undefined) bill.clientName = clientName;
@@ -77,6 +81,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (cashIn !== undefined) bill.cashIn = cashIn;
     if (currentBillDue !== undefined) bill.currentBillDue = currentBillDue;
     if (status !== undefined) bill.status = status;
+    if (documentType !== undefined) bill.documentType = documentType;
+    if (convertedFrom !== undefined) bill.convertedFrom = convertedFrom;
     
     if (status === 'Paid') {
       bill.currentBillDue = 0;
@@ -87,6 +93,33 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     await bill.save();
+
+    // Log payment updates to ledger
+    const paymentReceived = (bill.cashIn || 0) - prevCashInValue;
+    if (paymentReceived > 0 && bill.documentType === 'bill') {
+      try {
+        const { logLedgerTransaction } = await import('@/lib/ledgerHelper');
+        // Debit Cash by the payment amount
+        await logLedgerTransaction(
+          'CASH',
+          'debit',
+          paymentReceived,
+          `Payment Received for Bill ${bill.invoiceNo}`,
+          bill.invoiceNo
+        );
+        // Credit Accounts Receivable by the payment amount
+        await logLedgerTransaction(
+          'AR',
+          'credit',
+          paymentReceived,
+          `Payment credit for Bill ${bill.invoiceNo}`,
+          bill.invoiceNo
+        );
+      } catch (err) {
+        console.error('Error logging to ledger:', err);
+      }
+    }
+
     return NextResponse.json(bill);
   } catch (error: any) {
     console.error('Error updating bill:', error);

@@ -21,6 +21,13 @@ export async function POST(req: NextRequest) {
         order.paymentStatus = 'Paid';
         order.status = 'Confirmed';
         await order.save();
+
+        try {
+          const { logOrderPaymentToLedger } = await import('@/lib/ledgerHelper');
+          await logOrderPaymentToLedger(order);
+        } catch (ledgerErr) {
+          console.error('Error logging payment to ledger on IPN:', ledgerErr);
+        }
       }
     }
 

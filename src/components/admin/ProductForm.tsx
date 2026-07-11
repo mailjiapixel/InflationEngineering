@@ -25,7 +25,10 @@ import {
   Loader2, 
   ArrowLeft,
   X,
-  PlusCircle
+  PlusCircle,
+  ShoppingCart,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ImageUpload } from '@/components/ui/image-upload';
@@ -87,6 +90,18 @@ export function ProductForm({ initialData }: ProductFormProps) {
   const router = useRouter();
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Purchase Details optional section
+  const [showPurchaseDetails, setShowPurchaseDetails] = useState(false);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [purchaseSupplierId, setPurchaseSupplierId] = useState('');
+  const [purchasePriceDetail, setPurchasePriceDetail] = useState('');
+  const [purchaseDate, setPurchaseDate] = useState('');
+  const [purchaseInvoiceNo, setPurchaseInvoiceNo] = useState('');
+  const [purchaseQty, setPurchaseQty] = useState('');
+  const [purchaseNotes, setPurchaseNotes] = useState('');
+  const [purchasePaymentMethod, setPurchasePaymentMethod] = useState<'Cash' | 'Bank'>('Cash');
+  const [purchasePaidAmount, setPurchasePaidAmount] = useState('');
 
   const calculateDiscount = (price: number, salePrice?: number) => {
     if (!price || !salePrice || salePrice >= price) return 0;
@@ -150,7 +165,19 @@ export function ProductForm({ initialData }: ProductFormProps) {
         toast.error('Failed to load categories');
       }
     }
+    async function fetchSuppliers() {
+      try {
+        const res = await fetch('/api/admin/suppliers');
+        if (res.ok) {
+          const data = await res.json();
+          setSuppliers(Array.isArray(data) ? data : []);
+        }
+      } catch (error) {
+        console.error('Error fetching suppliers:', error);
+      }
+    }
     fetchCategories();
+    fetchSuppliers();
   }, []);
 
   const nameValue = form.watch('name');
@@ -190,14 +217,48 @@ export function ProductForm({ initialData }: ProductFormProps) {
         body: JSON.stringify(cleanValues),
       });
 
-      if (response.ok) {
-        toast.success(`Product ${initialData ? 'updated' : 'created'} successfully`);
-        router.push('/admin/products');
-        router.refresh();
-      } else {
+      if (!response.ok) {
         const error = await response.json();
         toast.error(error.message || 'Something went wrong');
+        setLoading(false);
+        return;
       }
+
+      const savedProduct = await response.json();
+
+      // If purchase details are filled in, create a supplier bill entry
+      if (showPurchaseDetails && purchaseSupplierId && purchasePriceDetail) {
+        try {
+          const qty = parseInt(purchaseQty) || 1;
+          const price = parseFloat(purchasePriceDetail) || 0;
+          const paid = parseFloat(purchasePaidAmount) || 0;
+          const total = qty * price;
+
+          await fetch('/api/admin/supplier-bills', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              supplierId: purchaseSupplierId,
+              date: purchaseDate || undefined,
+              items: [{ name: values.name, quantity: qty, price }],
+              subtotal: total,
+              discount: 0,
+              total,
+              paidAmount: paid,
+              paymentMethod: purchasePaymentMethod,
+              customBillNo: purchaseInvoiceNo || undefined,
+            }),
+          });
+        } catch (purchaseErr) {
+          console.error('Purchase details save error:', purchaseErr);
+          // Non-fatal: product already saved, just warn
+          toast.error('Product saved but purchase details could not be recorded.');
+        }
+      }
+
+      toast.success(`Product ${initialData ? 'updated' : 'created'} successfully`);
+      router.push('/admin/products');
+      router.refresh();
     } catch (error) {
       console.error('Error saving product:', error);
       toast.error('Failed to save product');
@@ -845,6 +906,199 @@ export function ProductForm({ initialData }: ProductFormProps) {
                         className="h-4 w-4" 
                     />
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Optional Purchase Details Section */}
+            <Card className="border-2 border-dashed border-amber-300 bg-amber-50/30">
+              <CardContent className="pt-5">
+                {/* Toggle header */}
+                <button
+                  type="button"
+                  onClick={() => setShowPurchaseDetails(!showPurchaseDetails)}
+                  className="w-full flex items-center justify-between group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 group-hover:bg-amber-200 transition-colors">
+                      <ShoppingCart className="h-4 w-4 text-amber-700" />
+                    </div>
+                    <div className="text-left">
+                      <p className="text-sm font-bold text-amber-900">Add Purchase Details</p>
+                      <p className="text-xs text-amber-600">Supplier name, purchase price, invoice no. — Optional</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] uppercase font-bold text-amber-600 border border-amber-300 rounded px-1.5 py-0.5">
+                      Optional
+                    </span>
+                    {showPurchaseDetails
+                      ? <ChevronUp className="h-4 w-4 text-amber-700" />
+                      : <ChevronDown className="h-4 w-4 text-amber-700" />
+                    }
+                  </div>
+                </button>
+
+                {/* Collapsible form body */}
+                {showPurchaseDetails && (
+                  <div className="mt-5 space-y-4 border-t border-amber-200 pt-5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Supplier */}
+                      <div>
+                        <Label htmlFor="pd-supplier" className="text-sm font-medium">
+                          Supplier / Vendor
+                        </Label>
+                        <select
+                          id="pd-supplier"
+                          value={purchaseSupplierId}
+                          onChange={(e) => setPurchaseSupplierId(e.target.value)}
+                          className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        >
+                          <option value="">— Select Supplier —</option>
+                          {suppliers.map((s) => (
+                            <option key={s._id} value={s._id}>
+                              {s.name}{s.companyName ? ` (${s.companyName})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        {suppliers.length === 0 && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            No suppliers found.{' '}
+                            <a href="/admin/suppliers" target="_blank" className="text-primary underline">Add a supplier</a> first.
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Purchase Price */}
+                      <div>
+                        <Label htmlFor="pd-price" className="text-sm font-medium">
+                          Purchase Price (per unit, BDT)
+                        </Label>
+                        <Input
+                          id="pd-price"
+                          type="number"
+                          placeholder="0.00"
+                          value={purchasePriceDetail}
+                          onChange={(e) => setPurchasePriceDetail(e.target.value)}
+                          className="mt-1.5"
+                        />
+                      </div>
+
+                      {/* Purchase Date */}
+                      <div>
+                        <Label htmlFor="pd-date" className="text-sm font-medium">
+                          Purchase Date
+                        </Label>
+                        <Input
+                          id="pd-date"
+                          type="date"
+                          value={purchaseDate}
+                          onChange={(e) => setPurchaseDate(e.target.value)}
+                          className="mt-1.5"
+                        />
+                      </div>
+
+                      {/* Invoice / Bill Number */}
+                      <div>
+                        <Label htmlFor="pd-invoice" className="text-sm font-medium">
+                          Supplier Invoice No.
+                        </Label>
+                        <Input
+                          id="pd-invoice"
+                          type="text"
+                          placeholder="e.g. INV-2024-001 (optional)"
+                          value={purchaseInvoiceNo}
+                          onChange={(e) => setPurchaseInvoiceNo(e.target.value)}
+                          className="mt-1.5"
+                        />
+                      </div>
+
+                      {/* Quantity Purchased */}
+                      <div>
+                        <Label htmlFor="pd-qty" className="text-sm font-medium">
+                          Quantity Purchased
+                        </Label>
+                        <Input
+                          id="pd-qty"
+                          type="number"
+                          placeholder="1"
+                          min="1"
+                          value={purchaseQty}
+                          onChange={(e) => setPurchaseQty(e.target.value)}
+                          className="mt-1.5"
+                        />
+                      </div>
+
+                      {/* Payment Method */}
+                      <div>
+                        <Label htmlFor="pd-method" className="text-sm font-medium">
+                          Payment Method
+                        </Label>
+                        <select
+                          id="pd-method"
+                          value={purchasePaymentMethod}
+                          onChange={(e: any) => setPurchasePaymentMethod(e.target.value)}
+                          className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        >
+                          <option value="Cash">Cash</option>
+                          <option value="Bank">Bank</option>
+                        </select>
+                      </div>
+
+                      {/* Paid Amount */}
+                      <div>
+                        <Label htmlFor="pd-paid" className="text-sm font-medium">
+                          Amount Paid Upfront (BDT)
+                        </Label>
+                        <Input
+                          id="pd-paid"
+                          type="number"
+                          placeholder="0 (leave blank if full due)"
+                          value={purchasePaidAmount}
+                          onChange={(e) => setPurchasePaidAmount(e.target.value)}
+                          className="mt-1.5"
+                        />
+                      </div>
+
+                      {/* Notes */}
+                      <div className="md:col-span-2">
+                        <Label htmlFor="pd-notes" className="text-sm font-medium">
+                          Notes (Optional)
+                        </Label>
+                        <Input
+                          id="pd-notes"
+                          type="text"
+                          placeholder="e.g. Received in 2 batches, warehouse A"
+                          value={purchaseNotes}
+                          onChange={(e) => setPurchaseNotes(e.target.value)}
+                          className="mt-1.5"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Summary preview */}
+                    {purchaseSupplierId && purchasePriceDetail && (
+                      <div className="bg-amber-100/60 border border-amber-200 rounded-md p-3 text-xs space-y-1 text-amber-900">
+                        <p className="font-semibold text-sm mb-1">Purchase Summary Preview</p>
+                        <div className="flex justify-between">
+                          <span>Qty × Unit Price:</span>
+                          <span className="font-medium">
+                            {purchaseQty || 1} × ৳{parseFloat(purchasePriceDetail || '0').toLocaleString()} = ৳{((parseInt(purchaseQty) || 1) * (parseFloat(purchasePriceDetail) || 0)).toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Paid Now:</span>
+                          <span className="font-medium text-emerald-700">৳{parseFloat(purchasePaidAmount || '0').toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between border-t border-amber-300 pt-1">
+                          <span>Due to Supplier:</span>
+                          <span className="font-bold text-rose-700">
+                            ৳{Math.max(0, ((parseInt(purchaseQty) || 1) * (parseFloat(purchasePriceDetail) || 0)) - (parseFloat(purchasePaidAmount) || 0)).toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>

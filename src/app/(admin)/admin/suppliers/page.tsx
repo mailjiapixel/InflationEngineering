@@ -299,7 +299,7 @@ export default function SuppliersPage() {
 
       {/* Add / Edit Supplier Dialog */}
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-[480px] w-full">
           <DialogHeader>
             <DialogTitle>{editingSupplier ? 'Edit Supplier' : 'Add New Supplier'}</DialogTitle>
           </DialogHeader>
@@ -321,25 +321,23 @@ export default function SuppliersPage() {
                 onChange={(e) => setSupplierCompany(e.target.value)}
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="phone">Phone *</Label>
-                <Input
-                  id="phone"
-                  value={supplierPhone}
-                  onChange={(e) => setSupplierPhone(e.target.value)}
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={supplierEmail}
-                  onChange={(e) => setSupplierEmail(e.target.value)}
-                />
-              </div>
+            <div>
+              <Label htmlFor="phone">Phone *</Label>
+              <Input
+                id="phone"
+                value={supplierPhone}
+                onChange={(e) => setSupplierPhone(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={supplierEmail}
+                onChange={(e) => setSupplierEmail(e.target.value)}
+              />
             </div>
             <div>
               <Label htmlFor="address">Address *</Label>

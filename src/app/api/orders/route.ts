@@ -99,7 +99,8 @@ export async function POST(req: NextRequest) {
     if (queryConditions.length > 0) {
       const existingPendingOrder = await Order.findOne({
         $or: queryConditions,
-        status: 'Order Placed'
+        status: 'Order Placed',
+        deletedAt: null
       });
 
       if (existingPendingOrder) {

@@ -118,7 +118,7 @@ export default function ExpensesPage() {
           <DialogTrigger render={<Button onClick={() => setEditingExpense(null)} />}>
             <Plus className="mr-2 h-4 w-4" /> Add Expense
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="sm:max-w-[480px] w-full">
             <DialogHeader>
               <DialogTitle>{editingExpense ? 'Edit' : 'Add'} Expense</DialogTitle>
             </DialogHeader>

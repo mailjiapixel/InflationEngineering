@@ -25,7 +25,8 @@ export async function GET(req: NextRequest) {
 
     const existingPendingOrder = await Order.findOne({
       $or: queryConditions,
-      status: 'Order Placed'
+      status: 'Order Placed',
+      deletedAt: null
     });
 
     return NextResponse.json({ hasPending: !!existingPendingOrder });

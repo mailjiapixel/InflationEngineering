@@ -1,190 +1,347 @@
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { format, isValid } from 'date-fns';
 
 export async function generateInvoicePDF(order: any, settings: any, mode: 'download' | 'print' = 'download') {
-  const doc = new jsPDF();
-
   const brandName = settings?.brandName || "Inflation Engineering";
   const brandEmail = settings?.contact?.email || "";
   const brandPhone = settings?.contact?.phone || "";
   const brandAddress = settings?.contact?.address || "";
 
-  // Set Colors
-  const primaryColor: [number, number, number] = [0, 209, 178]; // #00D1B2 (Teal)
-  const secondaryColor: [number, number, number] = [100, 100, 100];
-  const accentColor: [number, number, number] = [240, 240, 240];
+  // Dynamic colors based on shadcn/tailwind config (HSL values usually)
+  let primary = '#00D1B2';
+  let primaryForeground = '#ffffff';
+  let border = '#e2e8f0';
+  let mutedForeground = '#64748b';
+  let foreground = '#0f172a';
+  let background = '#ffffff';
 
-  // Header / Brand
-  doc.setFontSize(22);
-  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-  doc.setFont("helvetica", "bold");
-  doc.text(brandName.toUpperCase(), 14, 20);
+  if (typeof window !== 'undefined') {
+    const rootStyle = getComputedStyle(document.documentElement);
+    const getHsl = (varName: string, fallback: string) => {
+      const val = rootStyle.getPropertyValue(varName).trim();
+      if (!val) return fallback;
+      if (val.startsWith('#') || val.startsWith('rgb') || val.startsWith('hsl')) return val;
+      return `hsl(${val})`;
+    };
+    primary = getHsl('--primary', primary);
+    primaryForeground = getHsl('--primary-foreground', primaryForeground);
+    border = getHsl('--border', border);
+    mutedForeground = getHsl('--muted-foreground', mutedForeground);
+    foreground = getHsl('--foreground', foreground);
+    background = getHsl('--background', background);
+  }
 
-  doc.setFontSize(8);
-  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-  doc.setFont("helvetica", "normal");
-  doc.text(brandAddress, 14, 25);
-  doc.text(`Email: ${brandEmail} | Phone: ${brandPhone}`, 14, 29);
+  const getAbsoluteUrl = (url: string) => {
+    if (!url) return '';
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) return url;
+    if (typeof window !== 'undefined') {
+      return `${window.location.origin}${url.startsWith('/') ? '' : '/'}${url}`;
+    }
+    return url;
+  };
 
-  // Invoice Title
-  doc.setFontSize(30);
-  doc.setTextColor(230, 230, 230);
-  doc.setFont("helvetica", "bold");
-  doc.text("INVOICE", 140, 30);
-
-  // Horizontal Line
-  doc.setDrawColor(accentColor[0], accentColor[1], accentColor[2]);
-  doc.line(14, 35, 196, 35);
-
-  // Bill To & Order Info
-  doc.setFontSize(10);
-  doc.setTextColor(0, 0, 0);
-  doc.setFont("helvetica", "bold");
-  doc.text("BILL TO:", 14, 45);
-
-  doc.setFont("helvetica", "normal");
-  doc.text(order.shippingAddress?.fullName || "Customer", 14, 50);
-  doc.text(order.shippingAddress?.street || "", 14, 54);
-  doc.text(`${order.shippingAddress?.city || ""}, ${order.shippingAddress?.zipCode || ""}`, 14, 58);
-  doc.text(`Phone: ${order.shippingAddress?.phone || ""}`, 14, 62);
-
-  // Order Details (Right Side)
-  doc.setFont("helvetica", "bold");
-  doc.text("INVOICE #:", 140, 45);
-  doc.setFont("helvetica", "normal");
   const invoiceId = String(order._id || order.shortId || "").slice(-8).toUpperCase().replace(/^0+/, '');
-  doc.text(invoiceId, 170, 45);
-
-  doc.setFont("helvetica", "bold");
-  doc.text("DATE:", 140, 50);
-  doc.setFont("helvetica", "normal");
   const createdAt = order.createdAt ? new Date(order.createdAt) : null;
   const formattedDate = createdAt && isValid(createdAt) ? format(createdAt, "dd MMM yyyy") : "N/A";
-  doc.text(formattedDate, 170, 50);
 
-  doc.setFont("helvetica", "bold");
-  doc.text("PAYMENT:", 140, 55);
-  doc.setFont("helvetica", "normal");
-  doc.text(order.paymentMethod || "N/A", 170, 55);
-
-  doc.setFont("helvetica", "bold");
-  doc.text("STATUS:", 140, 60);
-  doc.setFont("helvetica", "normal");
-  doc.text(order.status || "Pending", 170, 60);
-
-  // Items Table
   const items = Array.isArray(order.items) ? order.items : [];
-  const tableRows = items.map((item: any, index: number) => [
-    index + 1,
-    `${item.name}${item.color || item.size ? `\n(${[item.color, item.size].filter(Boolean).join(' / ')})` : ''}`,
-    item.quantity,
-    `${Math.round(item.price)}`,
-    `${Math.round(item.price * item.quantity)}`,
-  ]);
-
-  // Use autoTable as a standalone function (correct API for Next.js bundling)
-  autoTable(doc, {
-    startY: 75,
-    head: [["#", "Product", "Qty", "Unit Price", "Subtotal"]],
-    body: tableRows,
-    theme: "striped",
-    headStyles: {
-      fillColor: primaryColor,
-      textColor: [255, 255, 255],
-      fontSize: 10,
-      fontStyle: "bold",
-    },
-    bodyStyles: { fontSize: 9 },
-    alternateRowStyles: { fillColor: [248, 248, 248] },
-    columnStyles: {
-      0: { cellWidth: 10 },
-      1: { cellWidth: 85 },
-      2: { halign: "center", cellWidth: 15 },
-      3: { halign: "right", cellWidth: 35 },
-      4: { halign: "right", cellWidth: 40 },
-    },
-  });
-
-  // Totals
-  const finalY = (doc as any).lastAutoTable.finalY + 10;
-
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-
   const subtotalRaw = items.reduce((acc: number, item: any) => {
     const price = Number(item.price) || 0;
     const quantity = Number(item.quantity) || 0;
     return acc + price * quantity;
   }, 0);
-
   const subtotal = Number.isFinite(subtotalRaw) ? subtotalRaw : 0;
-
-  // order.totalAmount in this system represents the Gross Total (Subtotal + Delivery Charge) 
-  // before any coupon or wallet discounts are applied.
   const deliveryCharge = order.deliveryCharge !== undefined
     ? Number(order.deliveryCharge) || 0
     : Math.max(0, (Number(order.totalAmount) || 0) - subtotal);
-
   const couponDiscount = Number(order.couponDiscountAmount) || 0;
   const walletUsed = Number(order.walletAmountUsed) || 0;
+  const totalAmount = Math.round(order.totalAmount - couponDiscount - walletUsed);
 
-  doc.text("Subtotal:", 140, finalY);
-  doc.text(`${Math.round(subtotal)}`, 190, finalY, { align: "right" });
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Invoice #${invoiceId}</title>
+        <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+        <style>
+          :root {
+            --primary: ${primary};
+            --primary-foreground: ${primaryForeground};
+            --border: ${border};
+            --muted-foreground: ${mutedForeground};
+            --foreground: ${foreground};
+            --background: ${background};
+          }
+          * {
+            box-sizing: border-box;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          body {
+            font-family: 'Inter', 'Noto Sans Bengali', sans-serif;
+            margin: 0;
+            padding: 20px;
+            color: var(--foreground);
+            background-color: var(--background);
+            font-size: 14px;
+            line-height: 1.5;
+          }
+          .invoice-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: var(--background);
+            padding: 20px;
+          }
+          .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+          }
+          .brand-logo-container {
+            display: flex;
+            flex-direction: column;
+          }
+          .brand-logo-img {
+            max-height: 60px;
+            max-width: 220px;
+            object-fit: contain;
+            margin-bottom: 5px;
+          }
+          .brand-logo {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--primary);
+            text-transform: uppercase;
+            margin-bottom: 5px;
+          }
+          .brand-details {
+            font-size: 12px;
+            color: var(--muted-foreground);
+          }
+          .invoice-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--border);
+            text-align: right;
+            margin: 0;
+          }
+          .details-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+          }
+          .bill-to h3, .order-info h3 {
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            color: var(--muted-foreground);
+          }
+          .bill-to p, .order-info p {
+            margin: 4px 0;
+          }
+          .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+          }
+          .info-label {
+            font-weight: 600;
+            color: var(--muted-foreground);
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+          }
+          th {
+            background-color: var(--primary);
+            color: var(--primary-foreground);
+            text-align: left;
+            padding: 10px;
+            font-size: 12px;
+            text-transform: uppercase;
+          }
+          td {
+            padding: 12px 10px;
+            border-bottom: 1px solid var(--border);
+          }
+          .text-right {
+            text-align: right;
+          }
+          .text-center {
+            text-align: center;
+          }
+          .totals-container {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 40px;
+          }
+          .totals-box {
+            width: 300px;
+          }
+          .total-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            font-size: 13px;
+          }
+          .total-row.grand-total {
+            border-top: 2px solid var(--border);
+            font-size: 16px;
+            font-weight: 700;
+            padding-top: 10px;
+            color: var(--foreground);
+          }
+          .footer {
+            text-align: center;
+            font-size: 11px;
+            color: var(--muted-foreground);
+            border-top: 1px solid var(--border);
+            padding-top: 20px;
+            margin-top: 40px;
+          }
+          @media print {
+            body {
+              padding: 0;
+            }
+            .invoice-container {
+              padding: 0;
+              max-width: 100%;
+            }
+            @page {
+              size: A4;
+              margin: 15mm;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="invoice-container">
+          <div class="header">
+            <div class="brand-logo-container">
+              <div class="brand-logo">${brandName}</div>
+              <div class="brand-details">
+                ${brandAddress ? `<div>${brandAddress}</div>` : ''}
+                <div>Email: ${brandEmail} | Phone: ${brandPhone}</div>
+              </div>
+            </div>
+            <div>
+              <h1 class="invoice-title">INVOICE</h1>
+            </div>
+          </div>
 
-  doc.text("Shipping Charge:", 140, finalY + 6);
-  doc.text(`${Math.round(deliveryCharge)}`, 190, finalY + 6, { align: "right" });
+          <div class="details-grid">
+            <div class="bill-to">
+              <h3>Bill To</h3>
+              <p><strong>${order.shippingAddress?.fullName || "Customer"}</strong></p>
+              ${order.shippingAddress?.street ? `<p>${order.shippingAddress.street}</p>` : ''}
+              <p>${order.shippingAddress?.city || ""}${order.shippingAddress?.zipCode ? `, ${order.shippingAddress.zipCode}` : ""}</p>
+              <p>Phone: ${order.shippingAddress?.phone || ""}</p>
+            </div>
+            <div class="order-info">
+              <h3>Order Info</h3>
+              <div class="info-row">
+                <span class="info-label">Invoice #</span>
+                <span>${invoiceId}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Date</span>
+                <span>${formattedDate}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Payment</span>
+                <span>${order.paymentMethod || "N/A"}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Status</span>
+                <span>${order.status || "Pending"}</span>
+              </div>
+            </div>
+          </div>
 
-  // Coupon Discount (Always show even if 0)
-  const couponColor = couponDiscount > 0 ? [0, 150, 80] : secondaryColor;
-  doc.setTextColor(couponColor[0], couponColor[1], couponColor[2]);
-  doc.text("Coupon Discount:", 140, finalY + 12);
-  doc.text(`${couponDiscount > 0 ? "- " : ""}${Math.round(couponDiscount)}`, 190, finalY + 12, { align: "right" });
-  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 50px;">#</th>
+                <th>Product</th>
+                <th class="text-center" style="width: 80px;">Qty</th>
+                <th class="text-right" style="width: 120px;">Unit Price</th>
+                <th class="text-right" style="width: 120px;">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${items.map((item: any, index: number) => `
+                <tr>
+                  <td>${index + 1}</td>
+                  <td>
+                    <strong>${item.name}</strong>
+                    ${item.color || item.size ? `<br><small style="color: var(--muted-foreground)">Color: ${item.color || 'N/A'} | Size: ${item.size || 'N/A'}</small>` : ''}
+                  </td>
+                  <td class="text-center">${item.quantity}</td>
+                  <td class="text-right">৳${Math.round(item.price)}</td>
+                  <td class="text-right">৳${Math.round(item.price * item.quantity)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
 
-  // Loyalty Discount (Always show even if 0)
-  const loyaltyColor = walletUsed > 0 ? [0, 150, 80] : secondaryColor;
-  doc.setTextColor(loyaltyColor[0], loyaltyColor[1], loyaltyColor[2]);
-  doc.text("Loyalty Discount:", 140, finalY + 18);
-  doc.text(`${walletUsed > 0 ? "- " : ""}${Math.round(walletUsed)}`, 190, finalY + 18, { align: "right" });
-  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+          <div class="totals-container">
+            <div class="totals-box">
+              <div class="total-row">
+                <span>Subtotal:</span>
+                <span>৳${Math.round(subtotal)}</span>
+              </div>
+              <div class="total-row">
+                <span>Shipping Charge:</span>
+                <span>৳${Math.round(deliveryCharge)}</span>
+              </div>
+              <div class="total-row" style="${couponDiscount > 0 ? 'color: var(--foreground);' : ''}">
+                <span>Coupon Discount:</span>
+                <span>${couponDiscount > 0 ? `- ৳${Math.round(couponDiscount)}` : '৳0'}</span>
+              </div>
+              <div class="total-row" style="${walletUsed > 0 ? 'color: var(--foreground);' : ''}">
+                <span>Loyalty Discount:</span>
+                <span>${walletUsed > 0 ? `- ৳${Math.round(walletUsed)}` : '৳0'}</span>
+              </div>
+              <div class="total-row grand-total">
+                <span>Total Amount:</span>
+                <span>৳${totalAmount}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
 
-  doc.setDrawColor(accentColor[0], accentColor[1], accentColor[2]);
-  doc.line(140, finalY + 22, 196, finalY + 22);
-
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(0, 0, 0);
-  doc.text("Total Amount:", 140, finalY + 28);
-  // Final total is Gross Total minus discounts. verified that order.totalAmount is Gross (pre-discount).
-  doc.text(`${Math.round(order.totalAmount - couponDiscount - walletUsed)}`, 190, finalY + 28, { align: "right" });
-
-  // Footer
-  const pageHeight = doc.internal.pageSize.height;
-  doc.setFontSize(8);
-  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-  doc.setFont("helvetica", "italic");
-  doc.text(`Thank you for shopping with ${brandName}!`, 105, pageHeight - 20, { align: "center" });
-  doc.setFont("helvetica", "normal");
-  doc.text("This is a computer generated invoice and does not require a physical signature.", 105, pageHeight - 15, { align: "center" });
-
-  // Save or Print
-  if (mode === 'print') {
-    // autoPrint triggers print dialog when PDF is opened
-    doc.autoPrint();
-    const blob = doc.output('blob');
-    const url = URL.createObjectURL(blob);
-    const printWindow = window.open(url, '_blank');
-    if (printWindow) {
-      printWindow.onload = () => {
-        // Some browsers need a small delay
-        setTimeout(() => {
-          URL.revokeObjectURL(url);
-        }, 10000);
-      };
-    }
-  } else {
-    doc.save(`invoice-${String(order._id).slice(-8).toUpperCase()}.pdf`);
+  const printWindow = window.open('', '_blank');
+  if (printWindow) {
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    
+    // Allow fonts and stylesheets to load
+    printWindow.onload = () => {
+      printWindow.focus();
+      printWindow.print();
+      if (mode === 'print') {
+        printWindow.close();
+      }
+    };
+    // Fallback if onload doesn't fire immediately
+    setTimeout(() => {
+      if (printWindow.document.readyState === 'complete') {
+        printWindow.focus();
+        printWindow.print();
+        if (mode === 'print') {
+          printWindow.close();
+        }
+      }
+    }, 1000);
   }
 }

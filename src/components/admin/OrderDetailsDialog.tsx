@@ -124,13 +124,6 @@ export default function OrderDetailsDialog({
                     {order.status}
                   </Badge>
                   <button 
-                    onClick={() => generateInvoicePDF(order, settings)}
-                    className="p-1.5 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-                    title="Download PDF Invoice"
-                  >
-                    <FileText className="h-4 w-4" />
-                  </button>
-                  <button 
                     onClick={() => handleLocalPrint('invoice')}
                     className="p-1.5 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
                     title="Print A4 Invoice"

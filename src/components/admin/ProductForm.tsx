@@ -371,7 +371,19 @@ export function ProductForm({ initialData }: ProductFormProps) {
                       <FormItem>
                         <FormLabel>Slug</FormLabel>
                         <FormControl>
-                          <Input placeholder="product-slug" {...field} />
+                          <Input 
+                            placeholder="product-slug" 
+                            {...field} 
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              const sanitized = val
+                                .replace(/\s+/g, '-')
+                                .replace(/[^a-zA-Z0-9-]/g, '')
+                                .replace(/-+/g, '-')
+                                .toLowerCase();
+                              field.onChange(sanitized);
+                            }}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

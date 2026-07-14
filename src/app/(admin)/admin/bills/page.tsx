@@ -623,145 +623,24 @@ export default function ClientBillsPage() {
               </div>
             </div>
 
-            {/* Product Multi-Select with Variant Support */}
-            <div className="bg-muted/30 p-4 rounded-lg space-y-3 border">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-semibold flex items-center gap-2">
-                  <Package className="h-4 w-4" /> Select Products to Add (Optional)
-                </Label>
-                {selectedCount > 0 && (
-                  <span className="text-xs bg-primary text-primary-foreground rounded-full px-2 py-0.5 font-bold">
-                    {selectedCount} selected
-                  </span>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => setProductPickerOpen(v => !v)}
-                className="w-full flex items-center justify-between px-3 py-2 border rounded-md bg-background text-sm text-muted-foreground hover:bg-muted transition-colors"
-              >
-                <span>{selectedCount > 0 ? `${selectedCount} item(s) selected` : 'Click to browse inventory...'}</span>
-                <ChevronDown className={`h-4 w-4 transition-transform ${productPickerOpen ? 'rotate-180' : ''}`} />
-              </button>
-              {productPickerOpen && (
-                <div className="border rounded-md bg-background shadow-sm">
-                  <div className="p-2 border-b">
-                    <div className="relative">
-                      <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                      <Input
-                        placeholder="Search products..."
-                        value={productSearchTerm}
-                        onChange={(e) => setProductSearchTerm(e.target.value)}
-                        className="pl-8 h-8 text-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="max-h-64 overflow-y-auto divide-y">
-                    {products
-                      .filter(p => p.name.toLowerCase().includes(productSearchTerm.toLowerCase()))
-                      .map(p => {
-                        const hasVariants = p.variants && p.variants.length > 0;
-                        const selectedVariantId = selectedProductVariants[p._id];
-                        const isSelected = p._id in selectedProductVariants;
-
-                        return (
-                          <div key={p._id}>
-                            <div
-                              className={`flex items-start gap-3 px-3 py-2.5 hover:bg-muted/50 cursor-pointer ${
-                                isSelected ? 'bg-primary/5' : ''
-                              }`}
-                            >
-                              {!hasVariants ? (
-                                // No variants — simple checkbox
-                                <label className="flex items-start gap-3 w-full cursor-pointer">
-                                  <Checkbox
-                                    checked={isSelected}
-                                    onCheckedChange={() =>
-                                      toggleProductVariant(p._id, null)
-                                    }
-                                    className="mt-0.5"
-                                  />
-                                  <div className="flex-1 min-w-0">
-                                    <div className="text-sm font-medium">{p.name}</div>
-                                    <div className="text-xs text-muted-foreground">
-                                      ৳{p.salePrice || p.price} · Stock: {p.stock ?? 0}
-                                    </div>
-                                  </div>
-                                </label>
-                              ) : (
-                                // Has variants — show product name + variant chips below
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-2">
-                                    <Package className="h-3.5 w-3.5 text-primary shrink-0" />
-                                    <span className="text-sm font-semibold">{p.name}</span>
-                                    <span className="text-xs bg-muted text-muted-foreground rounded px-1.5 py-0.5">
-                                      {p.variants.length} variants
-                                    </span>
-                                    {isSelected && (
-                                      <span className="ml-auto text-xs text-primary font-bold">✓ Selected</span>
-                                    )}
-                                  </div>
-                                  {/* Variant chips */}
-                                  <div className="flex flex-wrap gap-1.5 pl-1">
-                                    {p.variants.map((v: any) => {
-                                      const vLabel = [v.color, v.size].filter(Boolean).join(' / ') || 'Variant';
-                                      const vPrice = v.salePrice || v.price;
-                                      const isVariantSelected = selectedVariantId === v._id;
-                                      return (
-                                        <button
-                                          key={v._id}
-                                          type="button"
-                                          onClick={() => toggleProductVariant(p._id, v._id)}
-                                          className={`text-xs px-2.5 py-1 rounded-full border transition-all font-medium ${
-                                            isVariantSelected
-                                              ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-                                              : 'bg-background text-muted-foreground border-border hover:border-primary hover:text-primary'
-                                          }`}
-                                        >
-                                          {vLabel}
-                                          <span className={`ml-1 ${isVariantSelected ? 'opacity-80' : 'opacity-60'}`}>
-                                            ৳{vPrice}
-                                          </span>
-                                          {v.stock !== undefined && (
-                                            <span className={`ml-1 text-[10px] ${isVariantSelected ? 'opacity-70' : 'opacity-40'}`}>
-                                              ({v.stock} left)
-                                            </span>
-                                          )}
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    {products.filter(p => p.name.toLowerCase().includes(productSearchTerm.toLowerCase())).length === 0 && (
-                      <div className="text-center py-4 text-xs text-muted-foreground">No products found</div>
-                    )}
-                  </div>
-                  {selectedCount > 0 && (
-                    <div className="p-2 border-t flex gap-2">
-                      <Button type="button" size="sm" className="flex-1 font-bold" onClick={handleAddSelectedProducts}>
-                        <Plus className="h-3 w-3 mr-1" /> Add {selectedCount} Item(s) to Bill
-                      </Button>
-                      <Button type="button" size="sm" variant="ghost" onClick={() => { setSelectedProductVariants({}); setProductPickerOpen(false); }}>
-                        <X className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Bill Items */}
+            {/* Bill Items header with Product Selection Button */}
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <h4 className="font-bold text-sm">Bill Items</h4>
-                <Button type="button" variant="outline" size="sm" onClick={handleAddItemRow} className="font-bold">
-                  <Plus className="h-3 w-3 mr-1" /> Add Custom Item
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setProductPickerOpen(true)}
+                    className="font-bold"
+                  >
+                    <Plus className="mr-1 h-3.5 w-3.5" /> Select Products
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={handleAddItemRow} className="font-bold">
+                    <Plus className="h-3 w-3 mr-1" /> Add Custom Item
+                  </Button>
+                </div>
               </div>
               <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1">
                 {billItems.map((item, index) => (
@@ -955,6 +834,92 @@ export default function ClientBillsPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Product Selection Dialog */}
+      <Dialog open={productPickerOpen} onOpenChange={setProductPickerOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Select Products</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search products..."
+                className="pl-8"
+                value={productSearchTerm}
+                onChange={(e) => setProductSearchTerm(e.target.value)}
+              />
+            </div>
+            <div className="border rounded-md overflow-hidden max-h-[50vh] overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12">Select</TableHead>
+                    <TableHead>Product</TableHead>
+                    <TableHead>Options / Variants</TableHead>
+                    <TableHead className="text-right">Price</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {products
+                    .filter(p => p.name.toLowerCase().includes(productSearchTerm.toLowerCase()))
+                    .map((prod) => {
+                      const hasVariants = prod.variants && prod.variants.length > 0;
+                      return (
+                        <TableRow key={prod._id}>
+                          <TableCell>
+                            {!hasVariants && (
+                              <Checkbox
+                                checked={selectedProductVariants[prod._id] === null}
+                                onCheckedChange={() => toggleProductVariant(prod._id, null)}
+                              />
+                            )}
+                          </TableCell>
+                          <TableCell className="font-medium">{prod.name}</TableCell>
+                          <TableCell>
+                            {hasVariants ? (
+                              <div className="flex flex-wrap gap-2 py-1">
+                                {prod.variants.map((v: any) => {
+                                  const label = [v.color, v.size].filter(Boolean).join(' / ');
+                                  const isSelected = selectedProductVariants[prod._id] === v._id;
+                                  return (
+                                    <Button
+                                      key={v._id}
+                                      type="button"
+                                      variant={isSelected ? 'default' : 'outline'}
+                                      size="sm"
+                                      onClick={() => toggleProductVariant(prod._id, v._id)}
+                                      className="text-xs py-0.5 px-2 h-7"
+                                    >
+                                      {label} (৳{v.salePrice || v.price})
+                                    </Button>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">Standard Item</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {!hasVariants && `৳${prod.salePrice || prod.price}`}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                </TableBody>
+              </Table>
+            </div>
+            <div className="flex items-center justify-between border-t pt-4">
+              <span className="text-sm text-muted-foreground">{selectedCount} items selected</span>
+              <div className="space-x-2">
+                <Button variant="outline" size="sm" onClick={() => setProductPickerOpen(false)}>Cancel</Button>
+                <Button size="sm" onClick={handleAddSelectedProducts} className="bg-primary text-primary-foreground">Add Selected</Button>
+              </div>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, Search, FileText, CalendarDays, Eye, DollarSign } from 'lucide-react';
+import { Plus, Trash2, Search, FileText, CalendarDays, Eye, DollarSign, MoreHorizontal, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -23,6 +23,13 @@ import {
 } from '@/components/ui/dialog';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+import Swal from 'sweetalert2';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface BillItemInput {
   name: string;
@@ -51,6 +58,7 @@ export default function SupplierBillsPage() {
   // Detail View State
   const [selectedBill, setSelectedBill] = useState<any>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [editingBill, setEditingBill] = useState<any>(null);
 
   useEffect(() => {
     fetchBills();
@@ -118,7 +126,33 @@ export default function SupplierBillsPage() {
     setDiscountValue(0);
     setPaidAmount(0);
     setPaymentMethod('Cash');
+    setEditingBill(null);
     setIsCreateOpen(true);
+  };
+
+  const handleDeleteBill = async (id: string) => {
+    const result = await Swal.fire({
+      title: 'Delete Purchase Bill?',
+      text: 'Are you sure you want to delete this purchase bill record? This will adjust the supplier outstanding balance.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#ef4444',
+      confirmButtonText: 'Yes, delete it!'
+    });
+
+    if (!result.isConfirmed) return;
+    try {
+      const res = await fetch(`/api/admin/supplier-bills/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success('Supplier Bill deleted');
+        fetchBills();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.message || 'Failed to delete bill');
+      }
+    } catch (error) {
+      toast.error('Failed to delete bill');
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -136,8 +170,11 @@ export default function SupplierBillsPage() {
 
     try {
       setFormLoading(true);
-      const res = await fetch('/api/admin/supplier-bills', {
-        method: 'POST',
+      const url = editingBill ? `/api/admin/supplier-bills/${editingBill._id}` : '/api/admin/supplier-bills';
+      const method = editingBill ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method: method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           supplierId: selectedSupplierId,
@@ -156,11 +193,12 @@ export default function SupplierBillsPage() {
         throw new Error(err.message || 'Failed to save bill');
       }
 
-      toast.success('Supplier Bill generated successfully');
+      toast.success(editingBill ? 'Supplier Bill updated successfully' : 'Supplier Bill generated successfully');
       setIsCreateOpen(false);
+      setEditingBill(null);
       fetchBills();
     } catch (error: any) {
-      toast.error(error.message || 'Error creating bill');
+      toast.error(error.message || 'Error saving bill');
     } finally {
       setFormLoading(false);
     }
@@ -261,9 +299,38 @@ export default function SupplierBillsPage() {
                       </span>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => { setSelectedBill(bill); setIsDetailOpen(true); }}>
-                        <Eye className="h-4 w-4 text-indigo-600" />
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => { setSelectedBill(bill); setIsDetailOpen(true); }}>
+                            <Eye className="mr-2 h-4 w-4 text-indigo-600" /> View Details
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setEditingBill(bill);
+                              setSelectedSupplierId(bill.supplier?._id || bill.supplier || '');
+                              setBillDate(format(new Date(bill.date), 'yyyy-MM-dd'));
+                              setBillItems(bill.items);
+                              setDiscountValue(bill.discount || 0);
+                              setPaidAmount(bill.paidAmount || 0);
+                              setPaymentMethod(bill.paymentMethod || 'Cash');
+                              setIsCreateOpen(true);
+                            }}
+                          >
+                            <Edit className="mr-2 h-4 w-4" /> Edit Bill
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onClick={() => handleDeleteBill(bill._id)}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" /> Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </TableCell>
                   </TableRow>
                 ))
@@ -277,7 +344,7 @@ export default function SupplierBillsPage() {
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Create New Supplier Purchase Bill</DialogTitle>
+            <DialogTitle>{editingBill ? 'Edit' : 'Create New'} Supplier Purchase Bill</DialogTitle>
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -424,7 +491,7 @@ export default function SupplierBillsPage() {
                 Cancel
               </Button>
               <Button type="submit" disabled={formLoading}>
-                {formLoading ? 'Saving...' : 'Create Purchase Bill'}
+                {formLoading ? 'Saving...' : (editingBill ? 'Update Purchase Bill' : 'Create Purchase Bill')}
               </Button>
             </DialogFooter>
           </form>

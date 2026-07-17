@@ -29,12 +29,20 @@ import {
   Phone,
   CalendarDays,
   Hash,
-  ArrowRight
+  ArrowRight,
+  MoreHorizontal,
+  Edit
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
 import { generateBillPDF } from '@/lib/bill-invoice-generator';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface BillItemInput {
   name: string;
@@ -51,6 +59,7 @@ export default function ClientOffersPage() {
 
   // Offer detail view state
   const [selectedOffer, setSelectedOffer] = useState<any>(null);
+  const [editingOffer, setEditingOffer] = useState<any>(null);
 
   // Dialog state
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -247,19 +256,22 @@ export default function ClientOffersPage() {
         documentType: 'offer'
       };
 
-      const res = await fetch('/api/admin/bills', {
-        method: 'POST',
+      const url = editingOffer ? `/api/admin/bills/${editingOffer._id}` : '/api/admin/bills';
+      const method = editingOffer ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method: method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(offerData)
       });
 
       if (!res.ok) {
         const errorData = await res.json();
-        throw new Error(errorData.message || 'Failed to create quotation');
+        throw new Error(errorData.message || `Failed to ${editingOffer ? 'update' : 'create'} quotation`);
       }
 
       const createdOffer = await res.json();
-      toast.success('Quotation generated successfully!');
+      toast.success(editingOffer ? 'Quotation updated successfully!' : 'Quotation generated successfully!');
 
       // Auto-trigger download
       await generateBillPDF(createdOffer, settings, 'download');
@@ -281,11 +293,13 @@ export default function ClientOffersPage() {
     setClientAddress('');
     setBillItems([{ name: '', quantity: 1, price: 0 }]);
     setDeliveryCharge(0);
+    setServiceFee(0);
     setDiscountType('fixed');
     setDiscountValue(0);
     setSelectedProductVariants({});
     setProductSearchTerm('');
     setProductPickerOpen(false);
+    setEditingOffer(null);
   };
 
   const handleConvertToChalan = async (offer: any) => {
@@ -437,47 +451,50 @@ export default function ClientOffersPage() {
                       <TableCell>{offer.clientPhone}</TableCell>
                       <TableCell>{format(new Date(offer.date), 'dd MMM yyyy')}</TableCell>
                       <TableCell className="text-right font-medium">৳{Math.round(offer.total)}</TableCell>
-                      <TableCell className="text-right space-x-2">
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          title="View Details"
-                          onClick={() => setSelectedOffer(offer)}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          title="Download PDF"
-                          onClick={() => generateBillPDF(offer, settings, 'download')}
-                        >
-                          <Download className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          title="Print PDF"
-                          onClick={() => generateBillPDF(offer, settings, 'print')}
-                        >
-                          <Printer className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          className="bg-primary text-primary-foreground"
-                          size="sm"
-                          title="Convert to Challan"
-                          onClick={() => handleConvertToChalan(offer)}
-                        >
-                          <ArrowRight className="mr-1 h-3 w-3" /> Challan
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          size="icon"
-                          title="Delete Quotation"
-                          onClick={() => handleDeleteOffer(offer._id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => setSelectedOffer(offer)}>
+                              <Eye className="mr-2 h-4 w-4" /> View Details
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setEditingOffer(offer);
+                                setClientName(offer.clientName);
+                                setClientPhone(offer.clientPhone);
+                                setClientAddress(offer.clientAddress);
+                                setBillItems(offer.items);
+                                setDeliveryCharge(offer.deliveryCharge);
+                                setServiceFee(offer.serviceFee || 0);
+                                setDiscountType(offer.discountType || 'fixed');
+                                setDiscountValue(offer.discountValue || 0);
+                                setIsCreateOpen(true);
+                              }}
+                            >
+                              <Edit className="mr-2 h-4 w-4" /> Edit Offer
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => generateBillPDF(offer, settings, 'download')}>
+                              <Download className="mr-2 h-4 w-4" /> Download PDF
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => generateBillPDF(offer, settings, 'print')}>
+                              <Printer className="mr-2 h-4 w-4" /> Print PDF
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleConvertToChalan(offer)}>
+                              <ArrowRight className="mr-2 h-4 w-4" /> Convert to Challan
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => handleDeleteOffer(offer._id)}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" /> Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -492,7 +509,7 @@ export default function ClientOffersPage() {
       <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if(!open) resetForm(); }}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Create New Quotation / Offer</DialogTitle>
+            <DialogTitle>{editingOffer ? 'Edit' : 'Create New'} Quotation / Offer</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Client Info */}
@@ -688,7 +705,7 @@ export default function ClientOffersPage() {
               </Button>
               <Button type="submit" disabled={formLoading} className="bg-primary text-primary-foreground">
                 {formLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Generate Offer & Download PDF
+                {editingOffer ? 'Update' : 'Generate'} Offer & Download PDF
               </Button>
             </DialogFooter>
           </form>

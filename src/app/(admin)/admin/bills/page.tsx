@@ -36,12 +36,20 @@ import {
   Phone,
   User,
   CalendarDays,
-  Hash
+  Hash,
+  MoreHorizontal,
+  Edit
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
 import { generateBillPDF } from '@/lib/bill-invoice-generator';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface BillItemInput {
   name: string;
@@ -59,6 +67,7 @@ export default function ClientBillsPage() {
 
   // Bill detail view state
   const [selectedBill, setSelectedBill] = useState<any>(null);
+  const [editingBill, setEditingBill] = useState<any>(null);
 
   // Dialog state
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -271,19 +280,22 @@ export default function ClientBillsPage() {
         documentType: 'bill'
       };
 
-      const res = await fetch('/api/admin/bills', {
-        method: 'POST',
+      const url = editingBill ? `/api/admin/bills/${editingBill._id}` : '/api/admin/bills';
+      const method = editingBill ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method: method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(billData)
       });
 
       if (!res.ok) {
         const errorData = await res.json();
-        throw new Error(errorData.message || 'Failed to create bill');
+        throw new Error(errorData.message || `Failed to ${editingBill ? 'update' : 'create'} bill`);
       }
 
       const createdBill = await res.json();
-      toast.success('Bill generated successfully!');
+      toast.success(editingBill ? 'Bill updated successfully!' : 'Bill generated successfully!');
 
       // Auto-trigger download
       await generateBillPDF(createdBill, settings, 'download');
@@ -292,7 +304,7 @@ export default function ClientBillsPage() {
       resetForm();
       fetchBills();
     } catch (error: any) {
-      toast.error(error.message || 'Error creating bill');
+      toast.error(error.message || 'Error saving bill');
     } finally {
       setFormLoading(false);
     }
@@ -314,6 +326,7 @@ export default function ClientBillsPage() {
     setSelectedProductVariants({});
     setProductSearchTerm('');
     setProductPickerOpen(false);
+    setEditingBill(null);
   };
 
   const handleUpdateStatus = async (billId: string, currentDue: number) => {
@@ -526,46 +539,54 @@ export default function ClientBillsPage() {
                     {bill.expectedReceivableDate ? format(new Date(bill.expectedReceivableDate), 'dd MMM yyyy') : '—'}
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => generateBillPDF(bill, settings, 'download')}
-                        title="Download PDF"
-                        className="h-8 w-8 text-blue-600 hover:text-blue-800"
-                      >
-                        <Download className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => generateBillPDF(bill, settings, 'print')}
-                        title="Print Bill"
-                        className="h-8 w-8 text-teal-600 hover:text-teal-800"
-                      >
-                        <Printer className="h-4 w-4" />
-                      </Button>
-                      {bill.status === 'Due' && (
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={() => handleUpdateStatus(bill._id, bill.currentBillDue)}
-                          title="Collect Cash"
-                          className="h-8 w-8 text-green-600 hover:text-green-800"
-                        >
-                          <CreditCard className="h-4 w-4" />
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <MoreHorizontal className="h-4 w-4" />
                         </Button>
-                      )}
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => handleDeleteBill(bill._id)}
-                        title="Delete Bill"
-                        className="h-8 w-8 text-destructive hover:text-red-800"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => setSelectedBill(bill)}>
+                          <Eye className="mr-2 h-4 w-4" /> View Details
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setEditingBill(bill);
+                            setClientName(bill.clientName);
+                            setClientPhone(bill.clientPhone);
+                            setClientAddress(bill.clientAddress);
+                            setBillItems(bill.items);
+                            setDeliveryCharge(bill.deliveryCharge);
+                            setServiceFee(bill.serviceFee || 0);
+                            setDiscountType(bill.discountType || 'fixed');
+                            setDiscountValue(bill.discountValue || 0);
+                            setPrevDue(bill.prevDue || 0);
+                            setCashIn(bill.cashIn || 0);
+                            setExpectedReceivableDate(bill.expectedReceivableDate ? format(new Date(bill.expectedReceivableDate), 'yyyy-MM-dd') : '');
+                            setIsCreateOpen(true);
+                          }}
+                        >
+                          <Edit className="mr-2 h-4 w-4" /> Edit Bill
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => generateBillPDF(bill, settings, 'download')}>
+                          <Download className="mr-2 h-4 w-4 text-blue-600" /> Download PDF
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => generateBillPDF(bill, settings, 'print')}>
+                          <Printer className="mr-2 h-4 w-4 text-teal-600" /> Print Bill
+                        </DropdownMenuItem>
+                        {bill.status === 'Due' && (
+                          <DropdownMenuItem onClick={() => handleUpdateStatus(bill._id, bill.currentBillDue)}>
+                            <CreditCard className="mr-2 h-4 w-4 text-green-600" /> Collect Cash
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => handleDeleteBill(bill._id)}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" /> Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                 </TableRow>
               ))
@@ -578,7 +599,7 @@ export default function ClientBillsPage() {
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Generate Client Bill</DialogTitle>
+            <DialogTitle>{editingBill ? 'Edit' : 'Generate'} Client Bill</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Client Info */}
@@ -830,7 +851,7 @@ export default function ClientBillsPage() {
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
               <Button type="submit" disabled={formLoading} className="font-bold">
-                {formLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Generate & Download PDF'}
+                {formLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (editingBill ? 'Update & Download PDF' : 'Generate & Download PDF')}
               </Button>
             </DialogFooter>
           </form>

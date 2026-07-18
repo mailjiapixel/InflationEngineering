@@ -273,9 +273,6 @@ export default function ClientOffersPage() {
       const createdOffer = await res.json();
       toast.success(editingOffer ? 'Quotation updated successfully!' : 'Quotation generated successfully!');
 
-      // Auto-trigger download
-      await generateBillPDF(createdOffer, settings, 'download');
-
       setIsCreateOpen(false);
       resetForm();
       fetchOffers();
@@ -452,12 +449,22 @@ export default function ClientOffersPage() {
                       <TableCell>{format(new Date(offer.date), 'dd MMM yyyy')}</TableCell>
                       <TableCell className="text-right font-medium">৳{Math.round(offer.total)}</TableCell>
                       <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-teal-600 hover:text-teal-700 hover:bg-teal-50"
+                            onClick={() => generateBillPDF(offer, settings, 'print')}
+                            title="Print Quotation"
+                          >
+                            <Printer className="h-4 w-4" />
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => setSelectedOffer(offer)}>
                               <Eye className="mr-2 h-4 w-4" /> View Details
@@ -495,7 +502,8 @@ export default function ClientOffersPage() {
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
-                      </TableCell>
+                      </div>
+                    </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -705,7 +713,7 @@ export default function ClientOffersPage() {
               </Button>
               <Button type="submit" disabled={formLoading} className="bg-primary text-primary-foreground">
                 {formLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {editingOffer ? 'Update' : 'Generate'} Offer & Download PDF
+                {editingOffer ? 'Update Offer' : 'Generate Offer'}
               </Button>
             </DialogFooter>
           </form>

@@ -89,7 +89,7 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
     return url;
   };
 
-  const docType = bill.documentType || 'bill';
+  const docType = bill.documentType || (bill.billNo ? 'supplier-bill' : 'bill');
 
   // Titles & Labels
   let title = "BILL INVOICE";
@@ -103,9 +103,13 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
     title = "DELIVERY CHALLAN";
     labelTo = "DELIVER TO:";
     labelNo = "CHALLAN NO #:";
+  } else if (docType === 'supplier-bill') {
+    title = "PURCHASE BILL";
+    labelTo = "SUPPLIER:";
+    labelNo = "BILL NO #:";
   }
 
-  const invoiceId = String(bill.invoiceNo || bill._id || "").slice(-11).toUpperCase();
+  const invoiceId = String(bill.invoiceNo || bill.billNo || bill._id || "").slice(-11).toUpperCase();
   const billDate = bill.date ? new Date(bill.date) : new Date();
   const formattedDate = billDate && isValid(billDate) ? format(billDate, "dd MMM yyyy") : "N/A";
 
@@ -119,9 +123,16 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
   } else if (docType === 'chalan') {
     footerThankYou = `Thank you for choosing ${brandName}!`;
     footerGenerated = `This is a computer generated delivery challan, no signature required.`;
+  } else if (docType === 'supplier-bill') {
+    footerThankYou = `Thank you for your business!`;
+    footerGenerated = `This is a computer generated purchase bill, no signature required.`;
   }
 
-  const amountToConvert = docType === 'bill' ? Math.round(bill.gTotal || bill.total || 0) : Math.round(bill.total || 0);
+  const clientName = bill.clientName || bill.supplier?.name || "N/A";
+  const clientAddress = bill.clientAddress || bill.supplier?.companyName || "";
+  const clientPhone = bill.clientPhone || bill.supplier?.phone || "";
+
+  const amountToConvert = docType === 'bill' || docType === 'supplier-bill' ? Math.round(bill.gTotal || bill.total || 0) : Math.round(bill.total || 0);
 
   const htmlContent = `
     <!DOCTYPE html>
@@ -181,22 +192,26 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
             margin-bottom: 5px;
           }
           .brand-logo {
-            font-size: 24px;
+            font-size: 14px;
             font-weight: 700;
             color: var(--primary);
             text-transform: uppercase;
-            margin-bottom: 5px;
+            margin-bottom: 4px;
+            letter-spacing: 0.05em;
           }
           .brand-details {
             font-size: 12px;
             color: var(--muted-foreground);
+            line-height: 1.4;
           }
           .bill-title {
-            font-size: 24px;
-            font-weight: 700;
-            color: var(--border);
-            text-align: right;
-            margin: 0;
+            font-size: 32px;
+            font-weight: 800;
+            color: var(--foreground);
+            text-align: left;
+            margin: 0 0 8px 0;
+            letter-spacing: -0.025em;
+            text-transform: uppercase;
           }
           .details-grid {
             display: flex;
@@ -313,23 +328,21 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
         <div class="bill-container">
           <div class="header">
             <div class="brand-logo-container">
+              <h1 class="bill-title">${title}</h1>
               <div class="brand-logo">${brandName}</div>
               <div class="brand-details">
                 ${brandAddress ? `<div>${brandAddress}</div>` : ''}
                 <div>Email: ${brandEmail} | Phone: ${brandPhone}</div>
               </div>
             </div>
-            <div>
-              <h1 class="bill-title">${title}</h1>
-            </div>
           </div>
 
           <div class="details-grid">
             <div class="bill-to">
               <h3>${labelTo}</h3>
-              <p><strong>${bill.clientName || "Client Name"}</strong></p>
-              ${bill.clientAddress ? `<p>Address: ${bill.clientAddress}</p>` : ''}
-              <p>Phone: ${bill.clientPhone || ""}</p>
+              <p><strong>${clientName}</strong></p>
+              ${clientAddress ? `<p>Address: ${clientAddress}</p>` : ''}
+              ${clientPhone ? `<p>Phone: ${clientPhone}</p>` : ''}
             </div>
             <div class="bill-info">
               <h3>Document Info</h3>

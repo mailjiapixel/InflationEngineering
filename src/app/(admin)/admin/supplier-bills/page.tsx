@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, Search, FileText, CalendarDays, Eye, DollarSign, MoreHorizontal, Edit } from 'lucide-react';
+import { Plus, Trash2, Search, FileText, CalendarDays, Eye, DollarSign, MoreHorizontal, Edit, Download, Printer } from 'lucide-react';
+import { generateBillPDF } from '@/lib/bill-invoice-generator';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -60,10 +61,25 @@ export default function SupplierBillsPage() {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [editingBill, setEditingBill] = useState<any>(null);
 
+  const [settings, setSettings] = useState<any>(null);
+
   useEffect(() => {
     fetchBills();
     fetchSuppliers();
+    fetchSettings();
   }, []);
+
+  const fetchSettings = async () => {
+    try {
+      const res = await fetch('/api/settings');
+      if (res.ok) {
+        const data = await res.json();
+        setSettings(data);
+      }
+    } catch (err) {
+      console.error('Error fetching settings:', err);
+    }
+  };
 
   const fetchBills = async () => {
     try {
@@ -299,38 +315,55 @@ export default function SupplierBillsPage() {
                       </span>
                     </TableCell>
                     <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => { setSelectedBill(bill); setIsDetailOpen(true); }}>
-                            <Eye className="mr-2 h-4 w-4 text-indigo-600" /> View Details
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => {
-                              setEditingBill(bill);
-                              setSelectedSupplierId(bill.supplier?._id || bill.supplier || '');
-                              setBillDate(format(new Date(bill.date), 'yyyy-MM-dd'));
-                              setBillItems(bill.items);
-                              setDiscountValue(bill.discount || 0);
-                              setPaidAmount(bill.paidAmount || 0);
-                              setPaymentMethod(bill.paymentMethod || 'Cash');
-                              setIsCreateOpen(true);
-                            }}
-                          >
-                            <Edit className="mr-2 h-4 w-4" /> Edit Bill
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="text-destructive focus:text-destructive"
-                            onClick={() => handleDeleteBill(bill._id)}
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" /> Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-teal-600 hover:text-teal-700 hover:bg-teal-50"
+                          onClick={() => generateBillPDF(bill, settings, 'print')}
+                          title="Print Purchase Bill"
+                        >
+                          <Printer className="h-4 w-4" />
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => { setSelectedBill(bill); setIsDetailOpen(true); }}>
+                              <Eye className="mr-2 h-4 w-4 text-indigo-600" /> View Details
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setEditingBill(bill);
+                                setSelectedSupplierId(bill.supplier?._id || bill.supplier || '');
+                                setBillDate(format(new Date(bill.date), 'yyyy-MM-dd'));
+                                setBillItems(bill.items);
+                                setDiscountValue(bill.discount || 0);
+                                setPaidAmount(bill.paidAmount || 0);
+                                setPaymentMethod(bill.paymentMethod || 'Cash');
+                                setIsCreateOpen(true);
+                              }}
+                            >
+                              <Edit className="mr-2 h-4 w-4" /> Edit Bill
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => generateBillPDF(bill, settings, 'download')}>
+                              <Download className="mr-2 h-4 w-4 text-blue-600" /> Download PDF
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => generateBillPDF(bill, settings, 'print')}>
+                              <Printer className="mr-2 h-4 w-4 text-teal-600" /> Print Bill
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => handleDeleteBill(bill._id)}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" /> Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))

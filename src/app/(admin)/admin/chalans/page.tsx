@@ -262,9 +262,6 @@ export default function ClientChalansPage() {
       const createdChalan = await res.json();
       toast.success(editingChalan ? 'Delivery Challan updated successfully!' : 'Delivery Challan generated successfully!');
 
-      // Auto-trigger download
-      await generateBillPDF(createdChalan, settings, 'download');
-
       setIsCreateOpen(false);
       resetForm();
       fetchChalans();
@@ -435,45 +432,56 @@ export default function ClientChalansPage() {
                       <TableCell>{chalan.clientPhone}</TableCell>
                       <TableCell>{format(new Date(chalan.date), 'dd MMM yyyy')}</TableCell>
                       <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => setSelectedChalan(chalan)}>
-                              <Eye className="mr-2 h-4 w-4" /> View Details
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setEditingChalan(chalan);
-                                setClientName(chalan.clientName);
-                                setClientPhone(chalan.clientPhone);
-                                setClientAddress(chalan.clientAddress);
-                                setBillItems(chalan.items);
-                                setIsCreateOpen(true);
-                              }}
-                            >
-                              <Edit className="mr-2 h-4 w-4" /> Edit Challan
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => generateBillPDF(chalan, settings, 'download')}>
-                              <Download className="mr-2 h-4 w-4" /> Download PDF
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => generateBillPDF(chalan, settings, 'print')}>
-                              <Printer className="mr-2 h-4 w-4" /> Print PDF
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleConvertToBill(chalan)}>
-                              <ArrowRight className="mr-2 h-4 w-4" /> Convert to Bill
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              onClick={() => handleDeleteChalan(chalan._id)}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" /> Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-teal-600 hover:text-teal-700 hover:bg-teal-50"
+                            onClick={() => generateBillPDF(chalan, settings, 'print')}
+                            title="Print Challan"
+                          >
+                            <Printer className="h-4 w-4" />
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => setSelectedChalan(chalan)}>
+                                <Eye className="mr-2 h-4 w-4" /> View Details
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setEditingChalan(chalan);
+                                  setClientName(chalan.clientName);
+                                  setClientPhone(chalan.clientPhone);
+                                  setClientAddress(chalan.clientAddress);
+                                  setBillItems(chalan.items);
+                                  setIsCreateOpen(true);
+                                }}
+                              >
+                                <Edit className="mr-2 h-4 w-4" /> Edit Challan
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => generateBillPDF(chalan, settings, 'download')}>
+                                <Download className="mr-2 h-4 w-4" /> Download PDF
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => generateBillPDF(chalan, settings, 'print')}>
+                                <Printer className="mr-2 h-4 w-4" /> Print PDF
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleConvertToBill(chalan)}>
+                                <ArrowRight className="mr-2 h-4 w-4" /> Convert to Bill
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => handleDeleteChalan(chalan._id)}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" /> Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -588,7 +596,7 @@ export default function ClientChalansPage() {
               </Button>
               <Button type="submit" disabled={formLoading} className="bg-primary text-primary-foreground">
                 {formLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {editingChalan ? 'Update' : 'Generate'} Challan & Download PDF
+                {editingChalan ? 'Update Challan' : 'Generate Challan'}
               </Button>
             </DialogFooter>
           </form>

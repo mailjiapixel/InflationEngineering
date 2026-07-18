@@ -66,19 +66,6 @@ export default function AdminTopbar() {
                 </DropdownMenuLabel>
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
-              <DropdownMenuItem render={<Link href="/admin/dashboard" />} nativeButton={false}>
-                <LayoutDashboard className="mr-2 h-4 w-4" />
-                <span>Admin Dashboard</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem render={<Link href="/" />} nativeButton={false}>
-                <Store className="mr-2 h-4 w-4" />
-                <span>Visit Shop</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem render={<Link href="/admin/settings" />} nativeButton={false}>
-                <Settings className="mr-2 h-4 w-4" />
-                <span>Settings</span>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
               <DropdownMenuItem 
                 variant="destructive"
                 onClick={() => signOut({ callbackUrl: window.location.origin })}

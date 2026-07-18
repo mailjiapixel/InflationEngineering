@@ -297,9 +297,6 @@ export default function ClientBillsPage() {
       const createdBill = await res.json();
       toast.success(editingBill ? 'Bill updated successfully!' : 'Bill generated successfully!');
 
-      // Auto-trigger download
-      await generateBillPDF(createdBill, settings, 'download');
-
       setIsCreateOpen(false);
       resetForm();
       fetchBills();
@@ -539,54 +536,76 @@ export default function ClientBillsPage() {
                     {bill.expectedReceivableDate ? format(new Date(bill.expectedReceivableDate), 'dd MMM yyyy') : '—'}
                   </TableCell>
                   <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <MoreHorizontal className="h-4 w-4" />
+                    <div className="flex items-center justify-end gap-1.5">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-teal-600 hover:text-teal-700 hover:bg-teal-50"
+                        onClick={() => generateBillPDF(bill, settings, 'print')}
+                        title="Print Bill"
+                      >
+                        <Printer className="h-4 w-4" />
+                      </Button>
+                      {bill.status === 'Due' && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
+                          onClick={() => handleUpdateStatus(bill._id, bill.currentBillDue)}
+                          title="Collect Cash"
+                        >
+                          <CreditCard className="h-4 w-4" />
                         </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => setSelectedBill(bill)}>
-                          <Eye className="mr-2 h-4 w-4" /> View Details
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => {
-                            setEditingBill(bill);
-                            setClientName(bill.clientName);
-                            setClientPhone(bill.clientPhone);
-                            setClientAddress(bill.clientAddress);
-                            setBillItems(bill.items);
-                            setDeliveryCharge(bill.deliveryCharge);
-                            setServiceFee(bill.serviceFee || 0);
-                            setDiscountType(bill.discountType || 'fixed');
-                            setDiscountValue(bill.discountValue || 0);
-                            setPrevDue(bill.prevDue || 0);
-                            setCashIn(bill.cashIn || 0);
-                            setExpectedReceivableDate(bill.expectedReceivableDate ? format(new Date(bill.expectedReceivableDate), 'yyyy-MM-dd') : '');
-                            setIsCreateOpen(true);
-                          }}
-                        >
-                          <Edit className="mr-2 h-4 w-4" /> Edit Bill
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => generateBillPDF(bill, settings, 'download')}>
-                          <Download className="mr-2 h-4 w-4 text-blue-600" /> Download PDF
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => generateBillPDF(bill, settings, 'print')}>
-                          <Printer className="mr-2 h-4 w-4 text-teal-600" /> Print Bill
-                        </DropdownMenuItem>
-                        {bill.status === 'Due' && (
-                          <DropdownMenuItem onClick={() => handleUpdateStatus(bill._id, bill.currentBillDue)}>
-                            <CreditCard className="mr-2 h-4 w-4 text-green-600" /> Collect Cash
+                      )}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => setSelectedBill(bill)}>
+                            <Eye className="mr-2 h-4 w-4" /> View Details
                           </DropdownMenuItem>
-                        )}
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => handleDeleteBill(bill._id)}
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" /> Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setEditingBill(bill);
+                              setClientName(bill.clientName);
+                              setClientPhone(bill.clientPhone);
+                              setClientAddress(bill.clientAddress);
+                              setBillItems(bill.items);
+                              setDeliveryCharge(bill.deliveryCharge);
+                              setServiceFee(bill.serviceFee || 0);
+                              setDiscountType(bill.discountType || 'fixed');
+                              setDiscountValue(bill.discountValue || 0);
+                              setPrevDue(bill.prevDue || 0);
+                              setCashIn(bill.cashIn || 0);
+                              setExpectedReceivableDate(bill.expectedReceivableDate ? format(new Date(bill.expectedReceivableDate), 'yyyy-MM-dd') : '');
+                              setIsCreateOpen(true);
+                            }}
+                          >
+                            <Edit className="mr-2 h-4 w-4" /> Edit Bill
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => generateBillPDF(bill, settings, 'download')}>
+                            <Download className="mr-2 h-4 w-4 text-blue-600" /> Download PDF
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => generateBillPDF(bill, settings, 'print')}>
+                            <Printer className="mr-2 h-4 w-4 text-teal-600" /> Print Bill
+                          </DropdownMenuItem>
+                          {bill.status === 'Due' && (
+                            <DropdownMenuItem onClick={() => handleUpdateStatus(bill._id, bill.currentBillDue)}>
+                              <CreditCard className="mr-2 h-4 w-4 text-green-600" /> Collect Cash
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onClick={() => handleDeleteBill(bill._id)}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" /> Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -851,7 +870,7 @@ export default function ClientBillsPage() {
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
               <Button type="submit" disabled={formLoading} className="font-bold">
-                {formLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (editingBill ? 'Update & Download PDF' : 'Generate & Download PDF')}
+                {formLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (editingBill ? 'Update Bill' : 'Generate Bill')}
               </Button>
             </DialogFooter>
           </form>

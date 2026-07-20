@@ -330,7 +330,14 @@ function ExpensesIncomesContent() {
                   return (
                     <TableRow key={tx._id}>
                       <TableCell>{format(new Date(tx.date), 'dd MMM yyyy')}</TableCell>
-                      <TableCell className="font-medium">{tx.title}</TableCell>
+                      <TableCell>
+                        <div className="font-medium">{tx.title}</div>
+                        {tx.description && (
+                          <div className="text-xs text-muted-foreground mt-0.5 max-w-[300px] break-words">
+                            {tx.description}
+                          </div>
+                        )}
+                      </TableCell>
                       <TableCell>
                         {isExpense ? (
                           <span className="px-2 py-0.5 rounded text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/20 dark:text-rose-400 dark:border-rose-900/30">

@@ -78,11 +78,12 @@ export async function GET(req: NextRequest) {
       totalCOGS = 0 
     } = revenueStats[0] || {};
 
-    // 3. Expenses
+    // 3. Expenses & Incomes
     const expenseStats = await Expense.aggregate([
       { 
         $match: { 
-          date: { $gte: startDate, $lte: endDate }
+          date: { $gte: startDate, $lte: endDate },
+          type: { $ne: 'income' }
         } 
       },
       {
@@ -94,9 +95,25 @@ export async function GET(req: NextRequest) {
     ]);
     const totalExpenses = expenseStats[0]?.totalExpenses || 0;
 
+    const incomeStats = await Expense.aggregate([
+      {
+        $match: {
+          date: { $gte: startDate, $lte: endDate },
+          type: 'income'
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalIncomes: { $sum: '$amount' }
+        }
+      }
+    ]);
+    const totalIncomes = incomeStats[0]?.totalIncomes || 0;
+
     // 4. Calculations
     const grossProfit = totalRevenue - totalCOGS - totalDeliveryCharge;
-    const netProfit = grossProfit - totalExpenses;
+    const netProfit = grossProfit + totalIncomes - totalExpenses;
 
     // 5. Total Customers (Only users with role 'user')
     const totalUsers = await User.countDocuments({ 
@@ -173,7 +190,7 @@ export async function GET(req: NextRequest) {
 
     // 12. Ad ROI (ROAS)
     const adExpenses = await Expense.aggregate([
-      { $match: { category: 'Ads', date: { $gte: startDate, $lte: endDate } } },
+      { $match: { category: 'Ads', date: { $gte: startDate, $lte: endDate }, type: { $ne: 'income' } } },
       { $group: { _id: null, total: { $sum: '$amount' } } }
     ]);
     const totalAdSpend = adExpenses[0]?.total || 0;

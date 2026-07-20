@@ -14,11 +14,13 @@ export async function GET(req: NextRequest) {
     
     const { searchParams } = new URL(req.url);
     const category = searchParams.get('category');
+    const type = searchParams.get('type');
     const from = searchParams.get('from');
     const to = searchParams.get('to');
 
     const query: any = {};
     if (category) query.category = category;
+    if (type) query.type = type;
     
     if (from || to) {
       const dateQuery: any = {};
@@ -45,7 +47,7 @@ export async function GET(req: NextRequest) {
     const expenses = await Expense.find(query).sort({ date: -1 });
     return NextResponse.json(expenses);
   } catch (error) {
-    console.error('Error fetching expenses:', error);
+    console.error('Error fetching transactions:', error);
     return NextResponse.json({ message: 'Internal Server Error' }, { status: 500 });
   }
 }
@@ -58,10 +60,10 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { title, amount, category, date, description } = body;
+    const { title, amount, category, date, description, type } = body;
 
     // Validate required fields (basic)
-    if (!title || amount === undefined || !category) {
+    if (!title || amount === undefined || !category || !type) {
       return NextResponse.json({ message: 'Missing required fields' }, { status: 400 });
     }
 
@@ -70,6 +72,7 @@ export async function POST(req: NextRequest) {
       title,
       amount,
       category,
+      type,
       date: date ? new Date(date) : new Date(),
       description
     };
@@ -81,21 +84,32 @@ export async function POST(req: NextRequest) {
     // Log to ledger
     try {
       const { logLedgerTransaction } = await import('@/lib/ledgerHelper');
-      // Credit Cash (decreases cash asset)
-      await logLedgerTransaction(
-        'CASH',
-        'credit',
-        amount,
-        `Expense Paid: ${title} (${category})`,
-        expense._id.toString()
-      );
+      if (type === 'expense') {
+        // Credit Cash (decreases cash asset)
+        await logLedgerTransaction(
+          'CASH',
+          'credit',
+          amount,
+          `Expense Paid: ${title}`,
+          expense._id.toString()
+        );
+      } else {
+        // Debit Cash (increases cash asset)
+        await logLedgerTransaction(
+          'CASH',
+          'debit',
+          amount,
+          `Income Received: ${title}`,
+          expense._id.toString()
+        );
+      }
     } catch (err) {
-      console.error('Error logging expense to ledger:', err);
+      console.error('Error logging transaction to ledger:', err);
     }
 
     return NextResponse.json(expense, { status: 201 });
   } catch (error) {
-    console.error('Error creating expense:', error);
+    console.error('Error creating transaction:', error);
     return NextResponse.json({ message: 'Internal Server Error' }, { status: 500 });
   }
 }

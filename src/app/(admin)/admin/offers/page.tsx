@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Table,
   TableBody,
@@ -43,6 +44,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Pagination } from '@/components/ui/pagination';
 
 interface BillItemInput {
   name: string;
@@ -50,12 +52,38 @@ interface BillItemInput {
   price: number;
 }
 
-export default function ClientOffersPage() {
+function ClientOffersContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [offers, setOffers] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  const initialPage = Math.max(1, parseInt(searchParams.get('page') || '1'));
+  const [currentPage, setCurrentPage] = useState(initialPage);
+  
   const [settings, setSettings] = useState<any>(null);
+
+  // Sync state changes to URL query parameters
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (currentPage > 1) {
+      params.set('page', currentPage.toString());
+    } else {
+      params.delete('page');
+    }
+    router.push(`/admin/offers?${params.toString()}`);
+  }, [currentPage]);
+
+  // Reset page when search term changes
+  useEffect(() => {
+    setCurrentPage(1);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('page');
+    router.push(`/admin/offers?${params.toString()}`);
+  }, [searchTerm]);
 
   // Offer detail view state
   const [selectedOffer, setSelectedOffer] = useState<any>(null);
@@ -389,6 +417,13 @@ export default function ClientOffersPage() {
     b.invoiceNo.includes(searchTerm)
   );
 
+  const ITEMS_PER_PAGE = 20;
+  const totalPages = Math.ceil(filteredOffers.length / ITEMS_PER_PAGE);
+  const paginatedOffers = filteredOffers.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
   return (
     <div className="flex-1 space-y-6 px-0 py-4 md:p-8">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -441,7 +476,7 @@ export default function ClientOffersPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredOffers.map((offer) => (
+                  {paginatedOffers.map((offer) => (
                     <TableRow key={offer._id}>
                       <TableCell className="font-semibold">{offer.invoiceNo}</TableCell>
                       <TableCell>{offer.clientName}</TableCell>
@@ -508,6 +543,15 @@ export default function ClientOffersPage() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          )}
+          {totalPages > 1 && (
+            <div className="py-4 border-t bg-background px-6 mt-4">
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={(page) => setCurrentPage(page)}
+              />
             </div>
           )}
         </CardContent>
@@ -905,5 +949,13 @@ export default function ClientOffersPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function ClientOffersPage() {
+  return (
+    <Suspense fallback={<div className="flex h-32 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
+      <ClientOffersContent />
+    </Suspense>
   );
 }

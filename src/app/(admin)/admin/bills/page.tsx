@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Table,
   TableBody,
@@ -50,6 +51,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Pagination } from '@/components/ui/pagination';
 
 interface BillItemInput {
   name: string;
@@ -57,13 +59,47 @@ interface BillItemInput {
   price: number;
 }
 
-export default function ClientBillsPage() {
+function ClientBillsContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [bills, setBills] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  
+  const initialStatus = searchParams.get('status') || 'all';
+  const [statusFilter, setStatusFilter] = useState(initialStatus);
+  const [dateFilter, setDateFilter] = useState({ from: '', to: '' });
+  
+  const initialPage = Math.max(1, parseInt(searchParams.get('page') || '1'));
+  const [currentPage, setCurrentPage] = useState(initialPage);
+  
   const [settings, setSettings] = useState<any>(null);
+
+  // Sync state changes to URL query parameters
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (currentPage > 1) {
+      params.set('page', currentPage.toString());
+    } else {
+      params.delete('page');
+    }
+    if (statusFilter !== 'all') {
+      params.set('status', statusFilter);
+    } else {
+      params.delete('status');
+    }
+    router.push(`/admin/bills?${params.toString()}`);
+  }, [currentPage, statusFilter]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('page');
+    router.push(`/admin/bills?${params.toString()}`);
+  }, [searchTerm, statusFilter, dateFilter.from, dateFilter.to]);
 
   // Bill detail view state
   const [selectedBill, setSelectedBill] = useState<any>(null);
@@ -394,10 +430,32 @@ export default function ClientBillsPage() {
     }
   };
 
-  const filteredBills = bills.filter(b =>
-    b.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    b.clientPhone.includes(searchTerm) ||
-    b.invoiceNo.includes(searchTerm)
+  const filteredBills = bills.filter(b => {
+    const matchesSearch = b.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      b.clientPhone.includes(searchTerm) ||
+      b.invoiceNo.includes(searchTerm);
+      
+    let matchesDate = true;
+    if (dateFilter.from) {
+      matchesDate = matchesDate && new Date(b.date) >= new Date(dateFilter.from + 'T00:00:00');
+    }
+    if (dateFilter.to) {
+      matchesDate = matchesDate && new Date(b.date) <= new Date(dateFilter.to + 'T23:59:59');
+    }
+
+    let matchesStatus = true;
+    if (statusFilter !== 'all') {
+      matchesStatus = b.status?.toLowerCase() === statusFilter.toLowerCase();
+    }
+    
+    return matchesSearch && matchesDate && matchesStatus;
+  });
+
+  const ITEMS_PER_PAGE = 20;
+  const totalPages = Math.ceil(filteredBills.length / ITEMS_PER_PAGE);
+  const paginatedBills = filteredBills.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
   );
 
   // Metrics
@@ -462,17 +520,46 @@ export default function ClientBillsPage() {
             className="pl-8 w-full"
           />
         </div>
-        <div className="flex gap-2 w-full md:w-auto">
-          {['all', 'paid', 'due'].map((filter) => (
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+          <div className="flex gap-2">
+            {['all', 'paid', 'due'].map((filter) => (
+              <Button
+                key={filter}
+                variant={statusFilter === filter ? 'default' : 'outline'}
+                onClick={() => setStatusFilter(filter)}
+                className="capitalize font-bold"
+              >
+                {filter}
+              </Button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2 bg-muted/50 p-1 rounded-md border text-sm w-full sm:w-auto">
+            <Input
+              type="date"
+              className="h-8 w-32 border-none bg-transparent focus-visible:ring-0"
+              value={dateFilter.from}
+              onChange={(e) => setDateFilter(prev => ({ ...prev, from: e.target.value }))}
+            />
+            <span className="text-muted-foreground text-xs">to</span>
+            <Input
+              type="date"
+              className="h-8 w-32 border-none bg-transparent focus-visible:ring-0"
+              value={dateFilter.to}
+              onChange={(e) => setDateFilter(prev => ({ ...prev, to: e.target.value }))}
+            />
+          </div>
+
+          {(dateFilter.from || dateFilter.to) && (
             <Button
-              key={filter}
-              variant={statusFilter === filter ? 'default' : 'outline'}
-              onClick={() => setStatusFilter(filter)}
-              className="capitalize flex-1 md:flex-none font-bold"
+              variant="ghost"
+              size="sm"
+              onClick={() => setDateFilter({ from: '', to: '' })}
+              className="text-xs text-muted-foreground hover:text-primary"
             >
-              {filter}
+              Clear Date
             </Button>
-          ))}
+          )}
         </div>
       </div>
 
@@ -506,7 +593,7 @@ export default function ClientBillsPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              filteredBills.map((bill) => (
+              paginatedBills.map((bill) => (
                 <TableRow key={bill._id}>
                   <TableCell>
                     <button
@@ -612,6 +699,15 @@ export default function ClientBillsPage() {
             )}
           </TableBody>
         </Table>
+        {totalPages > 1 && (
+          <div className="py-4 border-t bg-background px-6">
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={(page) => setCurrentPage(page)}
+            />
+          </div>
+        )}
       </div>
 
       {/* Create Bill Dialog */}
@@ -1127,5 +1223,13 @@ export default function ClientBillsPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function ClientBillsPage() {
+  return (
+    <Suspense fallback={<div className="flex h-32 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
+      <ClientBillsContent />
+    </Suspense>
   );
 }

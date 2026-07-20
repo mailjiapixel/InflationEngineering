@@ -74,6 +74,9 @@ export async function logLedgerTransaction(
   account.currentBalance = balanceAfter;
   await account.save();
 
+  // Recalculate to keep chronological order correct in the DB running balances
+  await recalculateLedgerBalance(accountCode);
+
   return transaction;
 }
 

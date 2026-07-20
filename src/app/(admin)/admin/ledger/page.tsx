@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Table,
   TableBody,
@@ -17,6 +18,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   Loader2,
   Plus,
   Search,
@@ -26,18 +33,26 @@ import {
   DollarSign,
   Wallet,
   Landmark,
-  Edit2
+  Edit2,
+  Trash2,
+  MoreHorizontal
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+import Swal from 'sweetalert2';
 import { Pagination } from '@/components/ui/pagination';
 
-export default function AccountsLedgerPage() {
+function AccountsLedgerContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [accounts, setAccounts] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [journalSearchTerm, setJournalSearchTerm] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
+  
+  const initialPage = Math.max(1, parseInt(searchParams.get('page') || '1'));
+  const [currentPage, setCurrentPage] = useState(initialPage);
   const [dateFilter, setDateFilter] = useState({ from: '', to: '' });
 
   // Editing Opening Balance state
@@ -45,20 +60,46 @@ export default function AccountsLedgerPage() {
   const [newOpeningBalance, setNewOpeningBalance] = useState<number>(0);
   const [updatingOpening, setUpdatingOpening] = useState(false);
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [journalSearchTerm, dateFilter.from, dateFilter.to]);
-
   // Manual Transaction Dialog state
   const [isTxOpen, setIsTxOpen] = useState(false);
-  const [entryType, setEntryType] = useState<'deposit' | 'withdrawal' | 'transfer'>('deposit');
+  
+  const initialTab = (searchParams.get('tab') as 'journal' | 'transfer') || 'journal';
+  const [activeTab, setActiveTab] = useState<'journal' | 'transfer'>(initialTab);
+
+  // Sync state to URL search params
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (currentPage > 1) {
+      params.set('page', currentPage.toString());
+    } else {
+      params.delete('page');
+    }
+    if (activeTab !== 'journal') {
+      params.set('tab', activeTab);
+    } else {
+      params.delete('tab');
+    }
+    router.push(`/admin/ledger?${params.toString()}`);
+  }, [currentPage, activeTab]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('page');
+    router.push(`/admin/ledger?${params.toString()}`);
+  }, [journalSearchTerm, dateFilter.from, dateFilter.to]);
+
   const [accountCode, setAccountCode] = useState<'CASH' | 'BANK'>('CASH');
   const [fromAccountCode, setFromAccountCode] = useState<'CASH' | 'BANK'>('CASH');
   const [toAccountCode, setToAccountCode] = useState<'CASH' | 'BANK'>('BANK');
-  const [amount, setAmount] = useState<number>(0);
+  const [journalType, setJournalType] = useState<'in' | 'out'>('out');
+  const [journalAmount, setJournalAmount] = useState<string>('');
+  const [transferAmount, setTransferAmount] = useState<string>('');
   const [description, setDescription] = useState('');
   const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [creatingTx, setCreatingTx] = useState(false);
+  const [editingTx, setEditingTx] = useState<any>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchAccounts();
@@ -119,54 +160,152 @@ export default function AccountsLedgerPage() {
 
   const handleCreateTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (amount <= 0 || !description.trim()) {
-      toast.error('Amount must be positive and description is required');
+    if (!description.trim()) {
+      toast.error('Title is required');
       return;
+    }
+
+    let finalEntryType: 'deposit' | 'withdrawal' | 'transfer' = 'deposit';
+    let finalAmount = 0;
+
+    if (activeTab === 'journal') {
+      const amtVal = parseFloat(journalAmount) || 0;
+      if (amtVal <= 0) {
+        toast.error('Please enter a positive amount.');
+        return;
+      }
+
+      if (journalType === 'in') {
+        finalEntryType = 'deposit';
+        finalAmount = amtVal;
+      } else {
+        finalEntryType = 'withdrawal';
+        finalAmount = amtVal;
+      }
+    } else {
+      const transVal = parseFloat(transferAmount) || 0;
+      if (transVal <= 0) {
+        toast.error('Please enter a positive transfer amount.');
+        return;
+      }
+      finalEntryType = 'transfer';
+      finalAmount = transVal;
     }
 
     try {
       setCreatingTx(true);
       const payload = {
-        entryType,
-        amount,
+        entryType: finalEntryType,
+        amount: finalAmount,
         description,
         date,
-        accountCode: entryType !== 'transfer' ? accountCode : undefined,
-        fromAccountCode: entryType === 'transfer' ? fromAccountCode : undefined,
-        toAccountCode: entryType === 'transfer' ? toAccountCode : undefined,
+        accountCode: finalEntryType !== 'transfer' ? accountCode : undefined,
+        fromAccountCode: finalEntryType === 'transfer' ? fromAccountCode : undefined,
+        toAccountCode: finalEntryType === 'transfer' ? toAccountCode : undefined,
       };
 
-      const res = await fetch('/api/admin/ledger/transactions', {
-        method: 'POST',
+      const url = editingTx ? `/api/admin/ledger/transactions/${editingTx._id}` : '/api/admin/ledger/transactions';
+      const method = editingTx ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.message || 'Transaction logging failed');
+        throw new Error(err.message || 'Transaction saving failed');
       }
 
-      toast.success('Ledger entry recorded successfully!');
-      setIsTxOpen(false);
-      resetTxForm();
+      toast.success(editingTx ? 'Ledger entry updated successfully!' : 'Ledger entry recorded successfully!');
+      
+      if (editingTx) {
+        setIsTxOpen(false);
+        setEditingTx(null);
+        resetTxForm();
+      } else {
+        setJournalAmount('');
+        setTransferAmount('');
+        setDescription('');
+        setTimeout(() => {
+          titleRef.current?.focus();
+        }, 50);
+      }
+      
       fetchAccounts();
       fetchTransactions();
     } catch (error: any) {
-      toast.error(error.message || 'Failed to log transaction');
+      toast.error(error.message || 'Failed to save transaction');
     } finally {
       setCreatingTx(false);
     }
   };
 
+  const handleEditClick = (tx: any) => {
+    setEditingTx(tx);
+    const tab = tx.reference === 'manual-transfer' ? 'transfer' : 'journal';
+    setActiveTab(tab);
+    
+    setAccountCode(tx.account?.code || 'CASH');
+    setJournalType(tx.type === 'debit' ? 'in' : 'out');
+    
+    const cleanDesc = tx.description.replace(/^(Transfer to |Transfer from |Manual Deposit: |Manual Withdrawal: |Transfer to CASH: |Transfer to BANK: |Transfer from CASH: |Transfer from BANK: )/g, '');
+    setDescription(cleanDesc);
+    setDate(format(new Date(tx.date), 'yyyy-MM-dd'));
+
+    if (tab === 'journal') {
+      setJournalAmount(tx.amount.toString());
+    } else {
+      setTransferAmount(tx.amount.toString());
+      if (tx.type === 'debit') {
+        setToAccountCode(tx.account?.code || 'BANK');
+        setFromAccountCode(tx.account?.code === 'CASH' ? 'BANK' : 'CASH');
+      } else {
+        setFromAccountCode(tx.account?.code || 'CASH');
+        setToAccountCode(tx.account?.code === 'CASH' ? 'BANK' : 'CASH');
+      }
+    }
+    setIsTxOpen(true);
+  };
+
+  const handleDeleteTx = async (id: string) => {
+    const result = await Swal.fire({
+      title: 'Delete Ledger Entry?',
+      text: 'Are you sure you want to delete this manual transaction? This will update the running balances of the ledger.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#ef4444',
+      confirmButtonText: 'Yes, delete it!'
+    });
+
+    if (!result.isConfirmed) return;
+    try {
+      const res = await fetch(`/api/admin/ledger/transactions/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success('Transaction deleted successfully');
+        fetchAccounts();
+        fetchTransactions();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.message || 'Failed to delete transaction');
+      }
+    } catch (error) {
+      toast.error('Failed to delete transaction');
+    }
+  };
+
   const resetTxForm = () => {
-    setEntryType('deposit');
+    setActiveTab('journal');
     setAccountCode('CASH');
     setFromAccountCode('CASH');
     setToAccountCode('BANK');
-    setAmount(0);
+    setJournalType('out');
+    setJournalAmount('');
+    setTransferAmount('');
     setDescription('');
     setDate(format(new Date(), 'yyyy-MM-dd'));
+    setEditingTx(null);
   };
 
   const filteredTransactions = transactions.filter((tx) => {
@@ -195,7 +334,7 @@ export default function AccountsLedgerPage() {
   );
 
   return (
-    <div className="flex-1 space-y-6 px-0 py-4 md:p-8">
+    <div className="space-y-6">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Accounts Ledger</h2>
@@ -317,6 +456,7 @@ export default function AccountsLedgerPage() {
                     <TableHead>Type</TableHead>
                     <TableHead className="text-right">Amount (৳)</TableHead>
                     <TableHead className="text-right">Running Balance (৳)</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -346,6 +486,32 @@ export default function AccountsLedgerPage() {
                       </TableCell>
                       <TableCell className="text-right font-medium">৳{Math.round(tx.amount)}</TableCell>
                       <TableCell className="text-right font-semibold">৳{Math.round(tx.balanceAfter)}</TableCell>
+                      <TableCell className="text-right">
+                        {tx.reference && ['manual-deposit', 'manual-withdrawal', 'manual-transfer'].includes(tx.reference) ? (
+                          <div className="flex items-center justify-end gap-1.5">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => handleEditClick(tx)}>
+                                  <Edit2 className="mr-2 h-4 w-4 text-indigo-600" /> Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
+                                  onClick={() => handleDeleteTx(tx._id)}
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" /> Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -401,123 +567,204 @@ export default function AccountsLedgerPage() {
       <Dialog open={isTxOpen} onOpenChange={(open) => { setIsTxOpen(open); if(!open) resetTxForm(); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>New Journal Entry</DialogTitle>
+            <DialogTitle>{editingTx ? 'Edit' : 'New'} Journal Entry</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleCreateTransaction} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="txType">Entry Type</Label>
-              <Select
-                value={entryType}
-                onValueChange={(val: any) => setEntryType(val)}
-              >
-                <SelectTrigger id="txType">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="deposit">Deposit (Cash In / Credit to Bank)</SelectItem>
-                  <SelectItem value="withdrawal">Withdrawal (Cash Out / Expense)</SelectItem>
-                  <SelectItem value="transfer">Transfer (Cash to Bank / Bank to Cash)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
 
-            {entryType === 'transfer' ? (
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="fromAcc">From Account</Label>
-                  <Select
-                    value={fromAccountCode}
-                    onValueChange={(val: any) => {
-                      setFromAccountCode(val);
-                      if (val === toAccountCode) {
-                        setToAccountCode(val === 'CASH' ? 'BANK' : 'CASH');
-                      }
-                    }}
-                  >
-                    <SelectTrigger id="fromAcc">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="CASH">Cash</SelectItem>
-                      <SelectItem value="BANK">Bank</SelectItem>
-                    </SelectContent>
-                  </Select>
+          {/* Custom Tabs */}
+          {!editingTx && (
+            <div className="flex border-b border-muted">
+              <button
+                type="button"
+                className={`flex-1 py-2 text-sm font-semibold border-b-2 transition-all ${
+                  activeTab === 'journal'
+                    ? 'border-primary text-primary font-bold animate-pulse-subtle'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+                onClick={() => setActiveTab('journal')}
+              >
+                Cash In / Out (Journal)
+              </button>
+              <button
+                type="button"
+                className={`flex-1 py-2 text-sm font-semibold border-b-2 transition-all ${
+                  activeTab === 'transfer'
+                    ? 'border-primary text-primary font-bold animate-pulse-subtle'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+                onClick={() => setActiveTab('transfer')}
+              >
+                Account Transfer
+              </button>
+            </div>
+          )}
+
+          <form onSubmit={handleCreateTransaction} className="space-y-4 pt-2">
+            {activeTab === 'journal' ? (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="txDate">Transaction Date</Label>
+                    <Input
+                      id="txDate"
+                      type="date"
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="accCode">Target Account</Label>
+                    <Select
+                      value={accountCode}
+                      onValueChange={(val: any) => setAccountCode(val)}
+                    >
+                      <SelectTrigger id="accCode">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="CASH">Cash Account</SelectItem>
+                        <SelectItem value="BANK">Bank Account</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
+
                 <div className="space-y-2">
-                  <Label htmlFor="toAcc">To Account</Label>
-                  <Select
-                    value={toAccountCode}
-                    onValueChange={(val: any) => {
-                      setToAccountCode(val);
-                      if (val === fromAccountCode) {
-                        setFromAccountCode(val === 'CASH' ? 'BANK' : 'CASH');
-                      }
-                    }}
-                  >
-                    <SelectTrigger id="toAcc">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="CASH">Cash</SelectItem>
-                      <SelectItem value="BANK">Bank</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label>Type</Label>
+                  <div className="flex items-center gap-6 pt-1">
+                    <label className="flex items-center space-x-2 cursor-pointer select-none">
+                      <input
+                        type="radio"
+                        name="journalType"
+                        value="in"
+                        checked={journalType === 'in'}
+                        onChange={() => setJournalType('in')}
+                        className="h-4 w-4 text-emerald-600 focus:ring-emerald-500 border-gray-300"
+                      />
+                      <span className="text-emerald-600 dark:text-emerald-400 font-semibold text-sm">
+                        Debit (Cash In)
+                      </span>
+                    </label>
+                    <label className="flex items-center space-x-2 cursor-pointer select-none">
+                      <input
+                        type="radio"
+                        name="journalType"
+                        value="out"
+                        checked={journalType === 'out'}
+                        onChange={() => setJournalType('out')}
+                        className="h-4 w-4 text-rose-600 focus:ring-rose-500 border-gray-300"
+                      />
+                      <span className="text-rose-600 dark:text-rose-400 font-semibold text-sm">
+                        Credit (Cash Out)
+                      </span>
+                    </label>
+                  </div>
                 </div>
-              </div>
+              </>
             ) : (
-              <div className="space-y-2">
-                <Label htmlFor="accCode">Target Account</Label>
-                <Select
-                  value={accountCode}
-                  onValueChange={(val: any) => setAccountCode(val)}
-                >
-                  <SelectTrigger id="accCode">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="CASH">Cash Account</SelectItem>
-                    <SelectItem value="BANK">Bank Account</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="txDate">Transaction Date</Label>
+                  <Input
+                    id="txDate"
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="fromAcc">From Account</Label>
+                    <Select
+                      value={fromAccountCode}
+                      onValueChange={(val: any) => {
+                        setFromAccountCode(val);
+                        if (val === toAccountCode) {
+                          setToAccountCode(val === 'CASH' ? 'BANK' : 'CASH');
+                        }
+                      }}
+                    >
+                      <SelectTrigger id="fromAcc">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="CASH">Cash</SelectItem>
+                        <SelectItem value="BANK">Bank</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="toAcc">To Account</Label>
+                    <Select
+                      value={toAccountCode}
+                      onValueChange={(val: any) => {
+                        setToAccountCode(val);
+                        if (val === fromAccountCode) {
+                          setFromAccountCode(val === 'CASH' ? 'BANK' : 'CASH');
+                        }
+                      }}
+                    >
+                      <SelectTrigger id="toAcc">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="CASH">Cash</SelectItem>
+                        <SelectItem value="BANK">Bank</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </>
             )}
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="txAmount">Amount (৳)</Label>
-                <Input
-                  id="txAmount"
-                  type="number"
-                  min="1"
-                  value={amount}
-                  onChange={(e) => setAmount(parseFloat(e.target.value) || 0)}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="txDate">Transaction Date</Label>
-                <Input
-                  id="txDate"
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-
             <div className="space-y-2">
-              <Label htmlFor="txDesc">Description / Remarks</Label>
+              <Label htmlFor="txDesc">Title</Label>
               <Input
                 id="txDesc"
-                placeholder="e.g. Received cash payment or petty cash deposit"
+                ref={titleRef}
+                autoFocus
+                placeholder={
+                  activeTab === 'journal'
+                    ? "e.g. Sales Income or Facebook Ads Cost"
+                    : "e.g. Account Transfer"
+                }
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 required
               />
             </div>
 
-            <DialogFooter>
+            {activeTab === 'journal' ? (
+              <div className="space-y-2">
+                <Label htmlFor="journalAmt">Amount (৳)</Label>
+                <Input
+                  id="journalAmt"
+                  type="number"
+                  min="1"
+                  placeholder="Enter amount"
+                  value={journalAmount}
+                  onChange={(e) => setJournalAmount(e.target.value)}
+                  required
+                />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="transferAmt">Transfer Amount (৳)</Label>
+                <Input
+                  id="transferAmt"
+                  type="number"
+                  min="1"
+                  placeholder="0.00"
+                  value={transferAmount}
+                  onChange={(e) => setTransferAmount(e.target.value)}
+                  required
+                />
+              </div>
+            )}
+
+            <DialogFooter className="pt-4">
               <Button type="button" variant="outline" onClick={() => setIsTxOpen(false)}>
                 Cancel
               </Button>
@@ -530,5 +777,13 @@ export default function AccountsLedgerPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function AccountsLedgerPage() {
+  return (
+    <Suspense fallback={<div className="flex h-32 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
+      <AccountsLedgerContent />
+    </Suspense>
   );
 }

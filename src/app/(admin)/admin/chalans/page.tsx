@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Table,
   TableBody,
@@ -42,6 +43,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Pagination } from '@/components/ui/pagination';
 
 interface BillItemInput {
   name: string;
@@ -49,12 +51,38 @@ interface BillItemInput {
   price: number;
 }
 
-export default function ClientChalansPage() {
+function ClientChalansContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [chalans, setChalans] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  const initialPage = Math.max(1, parseInt(searchParams.get('page') || '1'));
+  const [currentPage, setCurrentPage] = useState(initialPage);
+  
   const [settings, setSettings] = useState<any>(null);
+
+  // Sync state changes to URL query parameters
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (currentPage > 1) {
+      params.set('page', currentPage.toString());
+    } else {
+      params.delete('page');
+    }
+    router.push(`/admin/chalans?${params.toString()}`);
+  }, [currentPage]);
+
+  // Reset page when search term changes
+  useEffect(() => {
+    setCurrentPage(1);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('page');
+    router.push(`/admin/chalans?${params.toString()}`);
+  }, [searchTerm]);
 
   // Chalan detail view state
   const [selectedChalan, setSelectedChalan] = useState<any>(null);
@@ -374,6 +402,13 @@ export default function ClientChalansPage() {
     b.invoiceNo.includes(searchTerm)
   );
 
+  const ITEMS_PER_PAGE = 20;
+  const totalPages = Math.ceil(filteredChalans.length / ITEMS_PER_PAGE);
+  const paginatedChalans = filteredChalans.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
   return (
     <div className="flex-1 space-y-6 px-0 py-4 md:p-8">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -425,7 +460,7 @@ export default function ClientChalansPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredChalans.map((chalan) => (
+                  {paginatedChalans.map((chalan) => (
                     <TableRow key={chalan._id}>
                       <TableCell className="font-semibold">{chalan.invoiceNo}</TableCell>
                       <TableCell>{chalan.clientName}</TableCell>
@@ -487,6 +522,15 @@ export default function ClientChalansPage() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          )}
+          {totalPages > 1 && (
+            <div className="py-4 border-t bg-background px-6 mt-4">
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={(page) => setCurrentPage(page)}
+              />
             </div>
           )}
         </CardContent>
@@ -749,5 +793,13 @@ export default function ClientChalansPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function ClientChalansPage() {
+  return (
+    <Suspense fallback={<div className="flex h-32 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
+      <ClientChalansContent />
+    </Suspense>
   );
 }

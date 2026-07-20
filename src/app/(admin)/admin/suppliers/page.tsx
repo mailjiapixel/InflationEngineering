@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Plus, Trash2, Edit, Search, User, Eye, CreditCard, DollarSign } from 'lucide-react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { Plus, Trash2, Edit, Search, User, Eye, CreditCard, DollarSign, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -24,11 +25,37 @@ import {
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
+import { Pagination } from '@/components/ui/pagination';
 
-export default function SuppliersPage() {
+function SuppliersContent() {
   const [suppliers, setSuppliers] = useState<any[]>([]);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  const initialPage = Math.max(1, parseInt(searchParams.get('page') || '1'));
+  const [currentPage, setCurrentPage] = useState(initialPage);
+
+  // Sync state changes to URL query parameters
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (currentPage > 1) {
+      params.set('page', currentPage.toString());
+    } else {
+      params.delete('page');
+    }
+    router.push(`/admin/suppliers?${params.toString()}`);
+  }, [currentPage]);
+
+  // Reset page when search term changes
+  useEffect(() => {
+    setCurrentPage(1);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('page');
+    router.push(`/admin/suppliers?${params.toString()}`);
+  }, [searchTerm]);
 
   // Add/Edit Dialog State
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -217,6 +244,13 @@ export default function SuppliersPage() {
     s.phone.includes(searchTerm)
   );
 
+  const ITEMS_PER_PAGE = 20;
+  const totalPages = Math.ceil(filteredSuppliers.length / ITEMS_PER_PAGE);
+  const paginatedSuppliers = filteredSuppliers.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -265,7 +299,7 @@ export default function SuppliersPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredSuppliers.map((supplier) => (
+                paginatedSuppliers.map((supplier) => (
                   <TableRow key={supplier._id}>
                     <TableCell>
                       <div className="font-medium text-foreground">{supplier.name}</div>
@@ -294,6 +328,15 @@ export default function SuppliersPage() {
               )}
             </TableBody>
           </Table>
+          {totalPages > 1 && (
+            <div className="py-4 border-t bg-background px-6">
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={(page) => setCurrentPage(page)}
+              />
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -549,5 +592,13 @@ export default function SuppliersPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function SuppliersPage() {
+  return (
+    <Suspense fallback={<div className="flex h-32 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
+      <SuppliersContent />
+    </Suspense>
   );
 }

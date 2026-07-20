@@ -16,11 +16,11 @@ export async function PUT(
     }
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return NextResponse.json({ message: 'Invalid expense ID' }, { status: 400 });
+      return NextResponse.json({ message: 'Invalid ID' }, { status: 400 });
     }
 
     const body = await req.json();
-    const { title, amount, category, date, description } = body;
+    const { title, amount, category, date, description, type } = body;
     
     // Sanitize update data (whitelist)
     const updateData: any = {};
@@ -29,6 +29,7 @@ export async function PUT(
     if (category !== undefined) updateData.category = category;
     if (date !== undefined) updateData.date = date;
     if (description !== undefined) updateData.description = description;
+    if (type !== undefined) updateData.type = type;
 
     await connectToDatabase();
     
@@ -39,34 +40,44 @@ export async function PUT(
     );
 
     if (!expense) {
-      return NextResponse.json({ message: 'Expense not found' }, { status: 404 });
+      return NextResponse.json({ message: 'Record not found' }, { status: 404 });
     }
 
-    // Update ledger entry if amount or title changed
+    // Update ledger entry if amount, title or type changed
     try {
       const LedgerTransaction = (await import('@/models/LedgerTransaction')).default;
       const { recalculateLedgerBalance, logLedgerTransaction } = await import('@/lib/ledgerHelper');
       
-      // Delete old ledger entries for this expense reference
+      // Delete old ledger entries for this reference
       await LedgerTransaction.deleteMany({ reference: id });
 
-      // Log the updated expense
-      await logLedgerTransaction(
-        'CASH',
-        'credit',
-        expense.amount,
-        `Expense Paid: ${expense.title} (${expense.category})`,
-        expense._id.toString()
-      );
+      // Log the updated expense/income
+      if (expense.type === 'expense') {
+        await logLedgerTransaction(
+          'CASH',
+          'credit',
+          expense.amount,
+          `Expense Paid: ${expense.title}`,
+          expense._id.toString()
+        );
+      } else {
+        await logLedgerTransaction(
+          'CASH',
+          'debit',
+          expense.amount,
+          `Income Received: ${expense.title}`,
+          expense._id.toString()
+        );
+      }
       // Recalculate Cash balance
       await recalculateLedgerBalance('CASH');
     } catch (err) {
-      console.error('Error updating ledger on expense update:', err);
+      console.error('Error updating ledger on transaction update:', err);
     }
     
     return NextResponse.json(expense);
   } catch (error) {
-    console.error('Error updating expense:', error);
+    console.error('Error updating transaction:', error);
     return NextResponse.json({ message: 'Internal Server Error' }, { status: 500 });
   }
 }
@@ -83,14 +94,14 @@ export async function DELETE(
     }
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return NextResponse.json({ message: 'Invalid expense ID' }, { status: 400 });
+      return NextResponse.json({ message: 'Invalid ID' }, { status: 400 });
     }
 
     await connectToDatabase();
     
     const expense = await Expense.findOneAndDelete({ _id: id });
     if (!expense) {
-      return NextResponse.json({ message: 'Expense not found' }, { status: 404 });
+      return NextResponse.json({ message: 'Record not found' }, { status: 404 });
     }
 
     // Delete related ledger entries and recalculate CASH balance
@@ -101,12 +112,12 @@ export async function DELETE(
       await LedgerTransaction.deleteMany({ reference: id });
       await recalculateLedgerBalance('CASH');
     } catch (err) {
-      console.error('Error updating ledger on expense delete:', err);
+      console.error('Error updating ledger on transaction delete:', err);
     }
     
-    return NextResponse.json({ message: 'Expense deleted successfully' });
+    return NextResponse.json({ message: 'Transaction deleted successfully' });
   } catch (error) {
-    console.error('Error deleting expense:', error);
+    console.error('Error deleting transaction:', error);
     return NextResponse.json({ message: 'Internal Server Error' }, { status: 500 });
   }
 }

@@ -104,8 +104,8 @@ const data = {
           url: "/admin/supplier-bills",
         },
         {
-          title: "Expenses",
-          url: "/admin/expenses",
+          title: "Expenses & Incomes",
+          url: "/admin/expenses-incomes",
         },
         {
           title: "Accounts Ledger",

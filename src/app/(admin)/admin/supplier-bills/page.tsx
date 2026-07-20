@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Plus, Trash2, Search, FileText, CalendarDays, Eye, DollarSign, MoreHorizontal, Edit, Download, Printer } from 'lucide-react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { Plus, Trash2, Search, FileText, CalendarDays, Eye, DollarSign, MoreHorizontal, Edit, Download, Printer, Users, Loader2 } from 'lucide-react';
 import { generateBillPDF } from '@/lib/bill-invoice-generator';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import {
   Table,
@@ -31,6 +32,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Pagination } from '@/components/ui/pagination';
 
 interface BillItemInput {
   name: string;
@@ -38,11 +40,45 @@ interface BillItemInput {
   price: number;
 }
 
-export default function SupplierBillsPage() {
+function SupplierBillsContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [bills, setBills] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  const initialStatus = searchParams.get('status') || 'all';
+  const [statusFilter, setStatusFilter] = useState(initialStatus);
+  const [dateFilter, setDateFilter] = useState({ from: '', to: '' });
+  
+  const initialPage = Math.max(1, parseInt(searchParams.get('page') || '1'));
+  const [currentPage, setCurrentPage] = useState(initialPage);
+
+  // Sync state changes to URL query parameters
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (currentPage > 1) {
+      params.set('page', currentPage.toString());
+    } else {
+      params.delete('page');
+    }
+    if (statusFilter !== 'all') {
+      params.set('status', statusFilter);
+    } else {
+      params.delete('status');
+    }
+    router.push(`/admin/supplier-bills?${params.toString()}`);
+  }, [currentPage, statusFilter]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('page');
+    router.push(`/admin/supplier-bills?${params.toString()}`);
+  }, [searchTerm, statusFilter, dateFilter.from, dateFilter.to]);
 
   // Create Bill State
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -220,10 +256,39 @@ export default function SupplierBillsPage() {
     }
   };
 
-  const filteredBills = bills.filter(b =>
-    b.billNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (b.supplier && b.supplier.name.toLowerCase().includes(searchTerm.toLowerCase()))
+  const filteredBills = bills.filter(b => {
+    const matchesSearch = b.billNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (b.supplier && b.supplier.name.toLowerCase().includes(searchTerm.toLowerCase()));
+      
+    let matchesDate = true;
+    if (dateFilter.from) {
+      matchesDate = matchesDate && new Date(b.date) >= new Date(dateFilter.from + 'T00:00:00');
+    }
+    if (dateFilter.to) {
+      matchesDate = matchesDate && new Date(b.date) <= new Date(dateFilter.to + 'T23:59:59');
+    }
+
+    if (!matchesDate) return false;
+
+    if (statusFilter === 'paid') {
+      return matchesSearch && b.status === 'Paid';
+    }
+    if (statusFilter === 'due') {
+      return matchesSearch && (b.status === 'Due' || b.status === 'Partially Paid' || (b.dueAmount && b.dueAmount > 0));
+    }
+    return matchesSearch;
+  });
+
+  const itemsPerPage = 10;
+  const totalPages = Math.ceil(filteredBills.length / itemsPerPage);
+  const paginatedBills = filteredBills.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
   );
+
+  const totalBilled = bills.reduce((sum, b) => sum + (b.total || 0), 0);
+  const totalPaid = bills.reduce((sum, b) => sum + (b.paidAmount || 0), 0);
+  const accountsPayable = bills.reduce((sum, b) => sum + (b.dueAmount || 0), 0);
 
   return (
     <div className="space-y-6">
@@ -243,14 +308,92 @@ export default function SupplierBillsPage() {
         </div>
       )}
 
-      <div className="flex items-center gap-2 max-w-sm">
-        <Search className="h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Search by bill no or supplier name..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full"
-        />
+      {/* Metrics Cards */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="bg-primary/5 border-primary/20">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Purchase Billed</CardTitle>
+            <FileText className="h-4 w-4 text-primary" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">৳{totalBilled.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground">Cumulative supplier purchases</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-green-500/5 border-green-500/20">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Paid (Cash-out)</CardTitle>
+            <DollarSign className="h-4 w-4 text-green-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-700">৳{totalPaid.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground">Payments made to suppliers</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-orange-500/5 border-orange-500/20">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Accounts Payable</CardTitle>
+            <Users className="h-4 w-4 text-orange-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-orange-700">৳{accountsPayable.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground">Outstanding due balances</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filter and Search */}
+      <div className="flex flex-col md:flex-row items-center gap-4">
+        <div className="relative w-full md:w-72">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search by bill no or supplier name..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-8 w-full"
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+          <div className="flex gap-2">
+            {['all', 'paid', 'due'].map((filter) => (
+              <Button
+                key={filter}
+                variant={statusFilter === filter ? 'default' : 'outline'}
+                onClick={() => setStatusFilter(filter)}
+                className="capitalize font-bold"
+              >
+                {filter}
+              </Button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2 bg-muted/50 p-1 rounded-md border text-sm w-full sm:w-auto">
+            <Input
+              type="date"
+              className="h-8 w-32 border-none bg-transparent focus-visible:ring-0"
+              value={dateFilter.from}
+              onChange={(e) => setDateFilter(prev => ({ ...prev, from: e.target.value }))}
+            />
+            <span className="text-muted-foreground text-xs">to</span>
+            <Input
+              type="date"
+              className="h-8 w-32 border-none bg-transparent focus-visible:ring-0"
+              value={dateFilter.to}
+              onChange={(e) => setDateFilter(prev => ({ ...prev, to: e.target.value }))}
+            />
+          </div>
+
+          {(dateFilter.from || dateFilter.to) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setDateFilter({ from: '', to: '' })}
+              className="text-xs text-muted-foreground hover:text-primary"
+            >
+              Clear Date
+            </Button>
+          )}
+        </div>
       </div>
 
       <Card>
@@ -282,7 +425,7 @@ export default function SupplierBillsPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredBills.map((bill) => (
+                paginatedBills.map((bill: any) => (
                   <TableRow key={bill._id}>
                     <TableCell className="font-semibold text-foreground">{bill.billNo}</TableCell>
                     <TableCell>
@@ -370,6 +513,15 @@ export default function SupplierBillsPage() {
               )}
             </TableBody>
           </Table>
+          {totalPages > 1 && (
+            <div className="py-4 border-t bg-background px-6">
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={(page) => setCurrentPage(page)}
+              />
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -624,5 +776,13 @@ export default function SupplierBillsPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function SupplierBillsPage() {
+  return (
+    <Suspense fallback={<div className="flex h-32 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
+      <SupplierBillsContent />
+    </Suspense>
   );
 }

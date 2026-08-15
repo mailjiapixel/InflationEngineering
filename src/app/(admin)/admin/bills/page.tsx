@@ -834,24 +834,24 @@ function ClientBillsContent() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="prevDue">Previous Due (৳)</Label>
+                    <Label htmlFor="serviceFee">Service Fee (৳) <span className="text-muted-foreground font-normal text-xs">— Optional</span></Label>
                     <Input
-                      id="prevDue"
+                      id="serviceFee"
                       type="number"
-                      value={prevDue || ''}
-                      onChange={(e) => setPrevDue(Math.max(0, parseFloat(e.target.value) || 0))}
+                      value={serviceFee || ''}
+                      placeholder="0"
+                      onChange={(e) => setServiceFee(Math.max(0, parseFloat(e.target.value) || 0))}
                     />
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="serviceFee">Service Fee (৳) <span className="text-muted-foreground font-normal text-xs">— Optional</span></Label>
+                  <Label htmlFor="prevDue">Previous Due (৳)</Label>
                   <Input
-                    id="serviceFee"
+                    id="prevDue"
                     type="number"
-                    value={serviceFee || ''}
-                    placeholder="0"
-                    onChange={(e) => setServiceFee(Math.max(0, parseFloat(e.target.value) || 0))}
+                    value={prevDue || ''}
+                    onChange={(e) => setPrevDue(Math.max(0, parseFloat(e.target.value) || 0))}
                   />
                 </div>
 

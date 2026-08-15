@@ -64,7 +64,10 @@ export async function POST(req: NextRequest) {
       status,
       expectedReceivableDate,
       documentType,
-      convertedFrom
+      convertedFrom,
+      expectedDeliveryDate,
+      termsAndConditions,
+      vatTaxIncluded
     } = body;
 
     if (!clientName || !clientPhone || !clientAddress || !items || items.length === 0) {
@@ -116,6 +119,9 @@ export async function POST(req: NextRequest) {
       currentBillDue,
       status,
       expectedReceivableDate: status === 'Due' && expectedReceivableDate ? new Date(expectedReceivableDate) : undefined,
+      expectedDeliveryDate: expectedDeliveryDate || undefined,
+      termsAndConditions: termsAndConditions || undefined,
+      vatTaxIncluded: vatTaxIncluded !== undefined ? vatTaxIncluded : true,
       documentType: docType,
       convertedFrom: convertedFrom || undefined
     });

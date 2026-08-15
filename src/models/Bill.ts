@@ -26,6 +26,9 @@ export interface IBill extends Document {
   currentBillDue: number;
   status: 'Paid' | 'Due';
   expectedReceivableDate?: Date;
+  expectedDeliveryDate?: Date | string;
+  termsAndConditions?: string;
+  vatTaxIncluded?: boolean;
   documentType?: 'offer' | 'chalan' | 'bill';
   convertedFrom?: mongoose.Types.ObjectId | string;
   createdAt: Date;
@@ -59,12 +62,18 @@ const BillSchema: Schema<IBill> = new Schema(
     currentBillDue: { type: Number, default: 0, min: 0 },
     status: { type: String, enum: ['Paid', 'Due'], default: 'Due' },
     expectedReceivableDate: { type: Date },
+    expectedDeliveryDate: { type: Schema.Types.Mixed },
+    termsAndConditions: { type: String },
+    vatTaxIncluded: { type: Boolean, default: true },
     documentType: { type: String, enum: ['offer', 'chalan', 'bill'], default: 'bill' },
     convertedFrom: { type: Schema.Types.ObjectId, ref: 'Bill' },
   },
   { timestamps: true }
 );
 
+if (mongoose.models && mongoose.models.Bill) {
+  delete (mongoose.models as any).Bill;
+}
 const Bill: Model<IBill> = mongoose.models.Bill || mongoose.model<IBill>('Bill', BillSchema);
 
 export default Bill;

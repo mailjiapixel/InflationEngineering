@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
@@ -60,10 +61,10 @@ function ClientOffersContent() {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  
+
   const initialPage = Math.max(1, parseInt(searchParams.get('page') || '1'));
   const [currentPage, setCurrentPage] = useState(initialPage);
-  
+
   const [settings, setSettings] = useState<any>(null);
 
   // Sync state changes to URL query parameters
@@ -97,6 +98,9 @@ function ClientOffersContent() {
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
   const [clientAddress, setClientAddress] = useState('');
+  const [expectedDeliveryDate, setExpectedDeliveryDate] = useState<string>('');
+  const [termsAndConditions, setTermsAndConditions] = useState<string>('');
+  const [vatTaxIncluded, setVatTaxIncluded] = useState<boolean>(true);
   const [billItems, setBillItems] = useState<BillItemInput[]>([
     { name: '', quantity: 1, price: 0 }
   ]);
@@ -158,7 +162,11 @@ function ClientOffersContent() {
   };
 
   // Calculations
-  const subtotal = billItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const subtotal = billItems.reduce((sum, item) => {
+    const qty = parseInt(item.quantity as any) || 0;
+    const price = parseFloat(item.price as any) || 0;
+    return sum + (price * qty);
+  }, 0);
   const discount = discountType === 'percentage'
     ? Math.round((subtotal * discountValue) / 100)
     : discountValue;
@@ -236,9 +244,9 @@ function ClientOffersContent() {
   const handleItemChange = (index: number, field: keyof BillItemInput, value: any) => {
     const updated = [...billItems];
     if (field === 'quantity') {
-      updated[index].quantity = Math.max(1, parseInt(value) || 1);
+      updated[index].quantity = value === '' ? '' as any : Math.max(1, parseInt(value) || 1);
     } else if (field === 'price') {
-      updated[index].price = Math.max(0, parseFloat(value) || 0);
+      updated[index].price = value === '' ? '' as any : Math.max(0, parseFloat(value) || 0);
     } else {
       updated[index].name = value;
     }
@@ -256,7 +264,13 @@ function ClientOffersContent() {
       return;
     }
 
-    const validItems = billItems.filter(item => item.name.trim() !== '');
+    const validItems = billItems
+      .filter(item => item.name.trim() !== '')
+      .map(item => ({
+        ...item,
+        quantity: Math.max(1, parseInt(item.quantity as any) || 1),
+        price: Math.max(0, parseFloat(item.price as any) || 0)
+      }));
     if (validItems.length === 0) {
       toast.error('At least one item with a name is required');
       return;
@@ -281,7 +295,10 @@ function ClientOffersContent() {
         cashIn: 0,
         currentBillDue: total,
         status: 'Due',
-        documentType: 'offer'
+        documentType: 'offer',
+        expectedDeliveryDate: expectedDeliveryDate || '',
+        termsAndConditions: termsAndConditions || '',
+        vatTaxIncluded: vatTaxIncluded !== undefined ? vatTaxIncluded : true
       };
 
       const url = editingOffer ? `/api/admin/bills/${editingOffer._id}` : '/api/admin/bills';
@@ -325,6 +342,9 @@ function ClientOffersContent() {
     setProductSearchTerm('');
     setProductPickerOpen(false);
     setEditingOffer(null);
+    setExpectedDeliveryDate('');
+    setTermsAndConditions('');
+    setVatTaxIncluded(true);
   };
 
   const handleConvertToChalan = async (offer: any) => {
@@ -500,45 +520,56 @@ function ClientOffersContent() {
                                 <MoreHorizontal className="h-4 w-4" />
                               </Button>
                             </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => setSelectedOffer(offer)}>
-                              <Eye className="mr-2 h-4 w-4" /> View Details
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setEditingOffer(offer);
-                                setClientName(offer.clientName);
-                                setClientPhone(offer.clientPhone);
-                                setClientAddress(offer.clientAddress);
-                                setBillItems(offer.items);
-                                setDeliveryCharge(offer.deliveryCharge);
-                                setServiceFee(offer.serviceFee || 0);
-                                setDiscountType(offer.discountType || 'fixed');
-                                setDiscountValue(offer.discountValue || 0);
-                                setIsCreateOpen(true);
-                              }}
-                            >
-                              <Edit className="mr-2 h-4 w-4" /> Edit Offer
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => generateBillPDF(offer, settings, 'download')}>
-                              <Download className="mr-2 h-4 w-4" /> Download PDF
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => generateBillPDF(offer, settings, 'print')}>
-                              <Printer className="mr-2 h-4 w-4" /> Print PDF
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleConvertToChalan(offer)}>
-                              <ArrowRight className="mr-2 h-4 w-4" /> Convert to Challan
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              onClick={() => handleDeleteOffer(offer._id)}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" /> Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </TableCell>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => setSelectedOffer(offer)}>
+                                <Eye className="mr-2 h-4 w-4" /> View Details
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setEditingOffer(offer);
+                                  setClientName(offer.clientName);
+                                  setClientPhone(offer.clientPhone);
+                                  setClientAddress(offer.clientAddress);
+                                  setBillItems(offer.items);
+                                  setDeliveryCharge(offer.deliveryCharge);
+                                  setServiceFee(offer.serviceFee || 0);
+                                  setDiscountType(offer.discountType || 'fixed');
+                                  setDiscountValue(offer.discountValue || 0);
+                                  let formattedExpDate = '';
+                                  if (offer.expectedDeliveryDate) {
+                                    try {
+                                      formattedExpDate = format(new Date(offer.expectedDeliveryDate), 'yyyy-MM-dd');
+                                    } catch (e) {
+                                      formattedExpDate = String(offer.expectedDeliveryDate).substring(0, 10);
+                                    }
+                                  }
+                                  setExpectedDeliveryDate(formattedExpDate);
+                                  setTermsAndConditions(offer.termsAndConditions || '');
+                                  setVatTaxIncluded(offer.vatTaxIncluded !== undefined ? offer.vatTaxIncluded : true);
+                                  setIsCreateOpen(true);
+                                }}
+                              >
+                                <Edit className="mr-2 h-4 w-4" /> Edit Offer
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => generateBillPDF(offer, settings, 'download')}>
+                                <Download className="mr-2 h-4 w-4" /> Download PDF
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => generateBillPDF(offer, settings, 'print')}>
+                                <Printer className="mr-2 h-4 w-4" /> Print PDF
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleConvertToChalan(offer)}>
+                                <ArrowRight className="mr-2 h-4 w-4" /> Convert to Challan
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => handleDeleteOffer(offer._id)}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" /> Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -558,7 +589,7 @@ function ClientOffersContent() {
       </Card>
 
       {/* Create Dialog */}
-      <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if(!open) resetForm(); }}>
+      <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if (!open) resetForm(); }}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingOffer ? 'Edit' : 'Create New'} Quotation / Offer</DialogTitle>
@@ -692,31 +723,68 @@ function ClientOffersContent() {
                       id="discVal"
                       type="number"
                       min="0"
-                      value={discountValue}
+                      placeholder="0"
+                      value={discountValue || ''}
                       onChange={(e) => setDiscountValue(Math.max(0, parseFloat(e.target.value) || 0))}
                     />
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="delCharge">Delivery Charge (৳)</Label>
-                  <Input
-                    id="delCharge"
-                    type="number"
-                    min="0"
-                    value={deliveryCharge}
-                    onChange={(e) => setDeliveryCharge(Math.max(0, parseFloat(e.target.value) || 0))}
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="delCharge">Delivery Charge (৳)</Label>
+                    <Input
+                      id="delCharge"
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={deliveryCharge || ''}
+                      onChange={(e) => setDeliveryCharge(Math.max(0, parseFloat(e.target.value) || 0))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="serviceFeeOffer">Service Fee (৳) <span className="text-muted-foreground font-normal text-xs">— Optional</span></Label>
+                    <Input
+                      id="serviceFeeOffer"
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={serviceFee || ''}
+                      onChange={(e) => setServiceFee(Math.max(0, parseFloat(e.target.value) || 0))}
+                    />
+                  </div>
                 </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="expectedDeliveryDate">Expected Delivery Date <span className="text-muted-foreground font-normal text-xs">— Optional</span></Label>
+                    <Input
+                      id="expectedDeliveryDate"
+                      type="date"
+                      value={expectedDeliveryDate}
+                      onChange={(e) => setExpectedDeliveryDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex items-center space-x-2 pt-8">
+                    <Checkbox
+                      id="vatTaxIncluded"
+                      checked={vatTaxIncluded}
+                      onCheckedChange={(checked) => setVatTaxIncluded(checked === true)}
+                    />
+                    <Label htmlFor="vatTaxIncluded" className="text-sm font-medium leading-none cursor-pointer">
+                      VAT & Tax Included
+                    </Label>
+                  </div>
+                </div>
+
                 <div className="space-y-2">
-                  <Label htmlFor="serviceFeeOffer">Service Fee (৳) <span className="text-muted-foreground font-normal text-xs">— Optional</span></Label>
-                  <Input
-                    id="serviceFeeOffer"
-                    type="number"
-                    min="0"
-                    placeholder="0"
-                    value={serviceFee || ''}
-                    onChange={(e) => setServiceFee(Math.max(0, parseFloat(e.target.value) || 0))}
+                  <Label htmlFor="termsAndConditions">Terms & Conditions <span className="text-muted-foreground font-normal text-xs">— Optional</span></Label>
+                  <textarea
+                    id="termsAndConditions"
+                    placeholder="Enter terms and conditions..."
+                    value={termsAndConditions}
+                    onChange={(e) => setTermsAndConditions(e.target.value)}
+                    className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                   />
                 </div>
               </div>
@@ -869,8 +937,23 @@ function ClientOffersContent() {
                   <h4 className="font-semibold text-muted-foreground mb-1 uppercase tracking-wider text-xs">Document Info</h4>
                   <p className="flex items-center gap-1.5 font-medium"><Hash className="h-3.5 w-3.5 text-primary" /> {selectedOffer.invoiceNo}</p>
                   <p className="flex items-center gap-1.5 mt-1 text-muted-foreground"><CalendarDays className="h-3.5 w-3.5" /> {format(new Date(selectedOffer.date), 'dd MMM yyyy')}</p>
+                  {selectedOffer.expectedDeliveryDate && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      <strong>Exp. Delivery:</strong> {format(new Date(selectedOffer.expectedDeliveryDate), 'dd MMM yyyy')}
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-1">
+                    <strong>VAT & Tax:</strong> {selectedOffer.vatTaxIncluded !== false ? 'Included' : 'Excluded'}
+                  </p>
                 </div>
               </div>
+
+              {selectedOffer.termsAndConditions && (
+                <div className="text-xs bg-muted/50 p-2.5 rounded border">
+                  <span className="font-semibold text-muted-foreground block mb-1">Terms & Conditions:</span>
+                  <p className="whitespace-pre-wrap">{selectedOffer.termsAndConditions}</p>
+                </div>
+              )}
 
               <div className="border rounded-md overflow-hidden">
                 <Table>

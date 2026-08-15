@@ -52,6 +52,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       items,
       subtotal,
       deliveryCharge,
+      serviceFee,
       discountType,
       discountValue,
       discount,
@@ -64,6 +65,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       expectedReceivableDate,
       documentType,
       convertedFrom,
+      expectedDeliveryDate,
+      termsAndConditions,
+      vatTaxIncluded
     } = body;
 
     if (clientName !== undefined) bill.clientName = clientName;
@@ -72,6 +76,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (items !== undefined) bill.items = items;
     if (subtotal !== undefined) bill.subtotal = subtotal;
     if (deliveryCharge !== undefined) bill.deliveryCharge = deliveryCharge;
+    if (serviceFee !== undefined) bill.serviceFee = serviceFee;
     if (discountType !== undefined) bill.discountType = discountType;
     if (discountValue !== undefined) bill.discountValue = discountValue;
     if (discount !== undefined) bill.discount = discount;
@@ -83,6 +88,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (status !== undefined) bill.status = status;
     if (documentType !== undefined) bill.documentType = documentType;
     if (convertedFrom !== undefined) bill.convertedFrom = convertedFrom;
+    if (expectedDeliveryDate !== undefined) bill.expectedDeliveryDate = expectedDeliveryDate;
+    if (termsAndConditions !== undefined) bill.termsAndConditions = termsAndConditions;
+    if (vatTaxIncluded !== undefined) bill.vatTaxIncluded = vatTaxIncluded;
     
     if (status === 'Paid') {
       bill.currentBillDue = 0;

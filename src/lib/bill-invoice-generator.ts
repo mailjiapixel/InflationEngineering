@@ -260,12 +260,12 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
             background-color: var(--primary);
             color: var(--primary-foreground);
             text-align: left;
-            padding: 10px;
+            padding: 7px 10px;
             font-size: 12px;
             text-transform: uppercase;
           }
           td {
-            padding: 12px 10px;
+            padding: 5px 10px;
             border-bottom: 1px solid var(--border);
           }
           .text-right {
@@ -366,6 +366,12 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
                   </div>
                 ` : ''}
               ` : ''}
+              ${docType === 'offer' && bill.expectedDeliveryDate ? `
+                <div class="info-row">
+                  <span class="info-label">Exp. Delivery</span>
+                  <span>${format(new Date(bill.expectedDeliveryDate), "dd MMM yyyy")}</span>
+                </div>
+              ` : ''}
             </div>
           </div>
 
@@ -450,7 +456,16 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
             </div>
             
             <div style="margin-top: 15px; margin-bottom: 25px; font-size: 13px; border-top: 1px dashed var(--border); padding-top: 10px;">
-              <strong>Amount in Words:</strong> ${numberToWords(amountToConvert)} Taka Only
+              <div>
+                <strong>Amount in Words:</strong> ${numberToWords(amountToConvert)} Taka Only ${bill.vatTaxIncluded !== undefined ? `(${bill.vatTaxIncluded ? 'VAT & Tax Included' : 'VAT & Tax Excluded'})` : ''}
+              </div>
+              
+              ${bill.termsAndConditions ? `
+                <div style="margin-top: 8px;">
+                  <strong>Terms & Conditions:</strong>
+                  <div style="white-space: pre-wrap; font-style: italic; color: #555; margin-top: 4px;">${bill.termsAndConditions}</div>
+                </div>
+              ` : ''}
             </div>
           ` : ''}
 

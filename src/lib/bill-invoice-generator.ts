@@ -1,38 +1,39 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { format, isValid } from 'date-fns';
 
 export function numberToWords(num: number): string {
   if (num === 0) return 'Zero';
-  
+
   const a = [
     '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
     'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'
   ];
   const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-  
+
   const convertBengaliStyle = (n: number): string => {
     if (n < 0) return 'Minus ' + convertBengaliStyle(Math.abs(n));
     let words = '';
-    
+
     if (n >= 10000000) {
       words += convertBengaliStyle(Math.floor(n / 10000000)) + ' Crore ';
       n %= 10000000;
     }
-    
+
     if (n >= 100000) {
       words += convertBengaliStyle(Math.floor(n / 100000)) + ' Lakh ';
       n %= 100000;
     }
-    
+
     if (n >= 1000) {
       words += convertBengaliStyle(Math.floor(n / 1000)) + ' Thousand ';
       n %= 1000;
     }
-    
+
     if (n >= 100) {
       words += convertBengaliStyle(Math.floor(n / 100)) + ' Hundred ';
       n %= 100;
     }
-    
+
     if (n > 0) {
       if (n < 20) {
         words += a[n];
@@ -43,7 +44,7 @@ export function numberToWords(num: number): string {
         }
       }
     }
-    
+
     return words.trim();
   };
 
@@ -343,6 +344,7 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
               <p><strong>${clientName}</strong></p>
               ${clientAddress ? `<p>Address: ${clientAddress}</p>` : ''}
               ${clientPhone ? `<p>Phone: ${clientPhone}</p>` : ''}
+              ${bill.clientEmail ? `<p>Email: ${bill.clientEmail}</p>` : ''}
             </div>
             <div class="bill-info">
               <h3>Document Info</h3>
@@ -482,7 +484,7 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
   if (printWindow) {
     printWindow.document.write(htmlContent);
     printWindow.document.close();
-    
+
     let hasPrinted = false;
     const triggerPrint = () => {
       if (hasPrinted) return;
@@ -495,7 +497,7 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
     };
 
     printWindow.onload = triggerPrint;
-    
+
     setTimeout(triggerPrint, 800);
   }
 }

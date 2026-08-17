@@ -5,6 +5,10 @@ import Order from '@/models/Order';
 import User from '@/models/User';
 import Product from '@/models/Product';
 import Expense from '@/models/Expense';
+import Bill from '@/models/Bill';
+import SupplierBill from '@/models/SupplierBill';
+import LedgerAccount from '@/models/LedgerAccount';
+import { seedLedgerAccounts } from '@/lib/ledgerHelper';
 
 export async function GET(req: NextRequest) {
   try {
@@ -251,10 +255,14 @@ export async function GET(req: NextRequest) {
       { $sort: { date: 1 } }
     ]);
 
-    // Simple Forecasting: Average Daily Revenue * 30
-    const daysInRange = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) || 1;
-    const avgDailyRevenue = totalRevenue / daysInRange;
-    const projectedMonthlyRevenue = avgDailyRevenue * 30;
+    // 15. Real-Time Accounts Receivable (Client Bills) & Accounts Payable (Supplier Bills)
+    const clientBills = await Bill.find({
+      $or: [{ documentType: 'bill' }, { documentType: { $exists: false } }]
+    });
+    const accountsReceivable = clientBills.reduce((sum, b) => sum + (b.currentBillDue || 0), 0);
+
+    const supplierBills = await SupplierBill.find({});
+    const accountsPayable = supplierBills.reduce((sum, b) => sum + (b.dueAmount || 0), 0);
 
     return NextResponse.json({
       stats: {
@@ -272,7 +280,8 @@ export async function GET(req: NextRequest) {
         totalAdSpend,
         newUsersCount,
         returningUsersCount,
-        projectedMonthlyRevenue
+        accountsReceivable,
+        accountsPayable
       },
       recentOrders,
       lowStockProducts,

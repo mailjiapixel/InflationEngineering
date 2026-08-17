@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import mongoose, { Document, Model, Schema } from 'mongoose';
 
 export interface IBillItem {
@@ -9,6 +10,7 @@ export interface IBillItem {
 export interface IBill extends Document {
   clientName: string;
   clientPhone: string;
+  clientEmail?: string;
   clientAddress: string;
   invoiceNo: string;
   date: Date;
@@ -39,6 +41,7 @@ const BillSchema: Schema<IBill> = new Schema(
   {
     clientName: { type: String, required: true },
     clientPhone: { type: String, required: true },
+    clientEmail: { type: String },
     clientAddress: { type: String, required: true },
     invoiceNo: { type: String, required: true, unique: true },
     date: { type: Date, default: Date.now },

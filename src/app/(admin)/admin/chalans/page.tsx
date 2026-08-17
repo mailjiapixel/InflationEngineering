@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
@@ -27,6 +28,8 @@ import {
   Eye,
   MapPin,
   Phone,
+  User,
+  Mail,
   CalendarDays,
   Hash,
   ArrowRight,
@@ -59,10 +62,10 @@ function ClientChalansContent() {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  
+
   const initialPage = Math.max(1, parseInt(searchParams.get('page') || '1'));
   const [currentPage, setCurrentPage] = useState(initialPage);
-  
+
   const [settings, setSettings] = useState<any>(null);
 
   // Sync state changes to URL query parameters
@@ -77,12 +80,12 @@ function ClientChalansContent() {
   }, [currentPage]);
 
   // Reset page when search term changes
-  useEffect(() => {
-    setCurrentPage(1);
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete('page');
-    router.push(`/admin/chalans?${params.toString()}`);
-  }, [searchTerm]);
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+    if (currentPage !== 1) {
+      setCurrentPage(1);
+    }
+  };
 
   // Chalan detail view state
   const [selectedChalan, setSelectedChalan] = useState<any>(null);
@@ -95,10 +98,16 @@ function ClientChalansContent() {
   // Form states
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
+  const [clientEmail, setClientEmail] = useState('');
   const [clientAddress, setClientAddress] = useState('');
   const [billItems, setBillItems] = useState<BillItemInput[]>([
     { name: '', quantity: 1, price: 0 }
   ]);
+
+  // Auto suggestion states
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [activeSuggestions, setActiveSuggestions] = useState<any[]>([]);
+  const [showSuggestionsFor, setShowSuggestionsFor] = useState<'name' | 'email' | 'phone' | null>(null);
 
   // Product multi-select state
   const [productSearchTerm, setProductSearchTerm] = useState('');
@@ -108,11 +117,19 @@ function ClientChalansContent() {
   // Phone validation
   const [phoneError, setPhoneError] = useState('');
 
-  useEffect(() => {
-    fetchChalans();
-    fetchProducts();
-    fetchSettings();
-  }, []);
+  const fetchSuggestions = async () => {
+    try {
+      const res = await fetch('/api/admin/suggest-clients');
+      if (res.ok) {
+        const result = await res.json();
+        if (result.success) {
+          setSuggestions(result.data || []);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching client suggestions:', err);
+    }
+  };
 
   const fetchChalans = async () => {
     try {
@@ -151,6 +168,13 @@ function ClientChalansContent() {
       console.error('Error fetching settings:', err);
     }
   };
+
+  useEffect(() => {
+    fetchChalans();
+    fetchProducts();
+    fetchSettings();
+    fetchSuggestions();
+  }, []);
 
   const validatePhone = (phone: string) => {
     const bdPhoneRegex = /^(?:\+?88)?01[3-9]\d{8}$/;
@@ -257,6 +281,7 @@ function ClientChalansContent() {
       const chalanData = {
         clientName,
         clientPhone,
+        clientEmail: clientEmail.trim() || undefined,
         clientAddress,
         items: validItems,
         subtotal: subtotalVal,
@@ -293,6 +318,7 @@ function ClientChalansContent() {
       setIsCreateOpen(false);
       resetForm();
       fetchChalans();
+      fetchSuggestions();
     } catch (error: any) {
       toast.error(error.message || 'Error saving challan');
     } finally {
@@ -303,6 +329,7 @@ function ClientChalansContent() {
   const resetForm = () => {
     setClientName('');
     setClientPhone('');
+    setClientEmail('');
     setPhoneError('');
     setClientAddress('');
     setBillItems([{ name: '', quantity: 1, price: 0 }]);
@@ -310,6 +337,8 @@ function ClientChalansContent() {
     setProductSearchTerm('');
     setProductPickerOpen(false);
     setEditingChalan(null);
+    setActiveSuggestions([]);
+    setShowSuggestionsFor(null);
   };
 
   const handleConvertToBill = async (chalan: any) => {
@@ -327,6 +356,7 @@ function ClientChalansContent() {
         const billData = {
           clientName: chalan.clientName,
           clientPhone: chalan.clientPhone,
+          clientEmail: chalan.clientEmail || undefined,
           clientAddress: chalan.clientAddress,
           items: chalan.items,
           subtotal: chalan.subtotal,
@@ -432,7 +462,7 @@ function ClientChalansContent() {
                 placeholder="Search by client or challan..."
                 className="pl-8"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
               />
             </div>
           </div>
@@ -492,6 +522,7 @@ function ClientChalansContent() {
                                   setEditingChalan(chalan);
                                   setClientName(chalan.clientName);
                                   setClientPhone(chalan.clientPhone);
+                                  setClientEmail(chalan.clientEmail || '');
                                   setClientAddress(chalan.clientAddress);
                                   setBillItems(chalan.items);
                                   setIsCreateOpen(true);
@@ -537,45 +568,128 @@ function ClientChalansContent() {
       </Card>
 
       {/* Create Dialog */}
-      <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if(!open) resetForm(); }}>
+      <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if (!open) resetForm(); }}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingChalan ? 'Edit' : 'Create New'} Delivery Challan</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Client Info */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="cName">Client Name *</Label>
+            {/* Client Info with Auto Suggestion (2 rows x 2 cols) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-muted/20 p-4 rounded-xl border">
+              {/* Client Name */}
+              <div className="space-y-1.5 relative">
+                <Label htmlFor="cName" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <User className="h-3.5 w-3.5" /> Client Name *
+                </Label>
                 <Input
                   id="cName"
                   placeholder="e.g. Rahim & Bros"
                   value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
+                  onChange={(e) => handleNameChange(e.target.value)}
+                  onBlur={() => setTimeout(() => setShowSuggestionsFor(null), 250)}
+                  className="h-10 text-sm bg-background"
                   required
+                  autoComplete="off"
                 />
+                {showSuggestionsFor === 'name' && activeSuggestions.length > 0 && (
+                  <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover text-popover-foreground border rounded-md shadow-xl max-h-56 overflow-y-auto divide-y">
+                    {activeSuggestions.map((s, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => handleSelectSuggestion(s)}
+                        className="p-2.5 text-xs hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors"
+                      >
+                        <div className="font-bold">{s.name}</div>
+                        <div className="text-muted-foreground">
+                          {s.phone ? `Phone: ${s.phone}` : ''} {s.email ? `| Email: ${s.email}` : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="cPhone">Client Phone *</Label>
+
+              {/* Client Phone */}
+              <div className="space-y-1.5 relative">
+                <Label htmlFor="cPhone" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <Phone className="h-3.5 w-3.5" /> Client Phone *
+                </Label>
                 <Input
                   id="cPhone"
                   placeholder="e.g. 017XXXXXXXX"
                   value={clientPhone}
-                  onChange={(e) => {
-                    setClientPhone(e.target.value);
-                    if (e.target.value) validatePhone(e.target.value);
+                  onChange={(e) => handlePhoneChange(e.target.value)}
+                  onBlur={(e) => {
+                    validatePhone(e.target.value);
+                    setTimeout(() => setShowSuggestionsFor(null), 250);
                   }}
+                  className={`h-10 text-sm bg-background ${phoneError ? 'border-destructive focus-visible:ring-destructive' : ''}`}
                   required
+                  autoComplete="off"
                 />
-                {phoneError && <p className="text-xs text-destructive">{phoneError}</p>}
+                {phoneError && <p className="text-[11px] text-destructive mt-0.5">{phoneError}</p>}
+                {showSuggestionsFor === 'phone' && activeSuggestions.length > 0 && (
+                  <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover text-popover-foreground border rounded-md shadow-xl max-h-56 overflow-y-auto divide-y">
+                    {activeSuggestions.map((s, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => handleSelectSuggestion(s)}
+                        className="p-2.5 text-xs hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors"
+                      >
+                        <div className="font-bold">{s.phone}</div>
+                        <div className="text-muted-foreground">
+                          {s.name} {s.email ? `| ${s.email}` : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="cAddr">Client Address *</Label>
+
+              {/* Client Email (Optional) */}
+              <div className="space-y-1.5 relative">
+                <Label htmlFor="cEmail" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <Mail className="h-3.5 w-3.5" /> Email (Optional)
+                </Label>
+                <Input
+                  id="cEmail"
+                  type="email"
+                  placeholder="e.g. client@example.com"
+                  value={clientEmail}
+                  onChange={(e) => handleEmailChange(e.target.value)}
+                  onBlur={() => setTimeout(() => setShowSuggestionsFor(null), 250)}
+                  className="h-10 text-sm bg-background"
+                  autoComplete="off"
+                />
+                {showSuggestionsFor === 'email' && activeSuggestions.length > 0 && (
+                  <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover text-popover-foreground border rounded-md shadow-xl max-h-56 overflow-y-auto divide-y">
+                    {activeSuggestions.map((s, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => handleSelectSuggestion(s)}
+                        className="p-2.5 text-xs hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors"
+                      >
+                        <div className="font-bold">{s.email}</div>
+                        <div className="text-muted-foreground">
+                          {s.name} {s.phone ? `| ${s.phone}` : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Client Address */}
+              <div className="space-y-1.5">
+                <Label htmlFor="cAddr" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <MapPin className="h-3.5 w-3.5" /> Client Address *
+                </Label>
                 <Input
                   id="cAddr"
                   placeholder="e.g. Banani, Dhaka"
                   value={clientAddress}
                   onChange={(e) => setClientAddress(e.target.value)}
+                  className="h-10 text-sm bg-background"
                   required
                 />
               </div>
@@ -742,6 +856,9 @@ function ClientChalansContent() {
                   <h4 className="font-semibold text-muted-foreground mb-1 uppercase tracking-wider text-xs">Deliver To</h4>
                   <p className="font-medium text-base">{selectedChalan.clientName}</p>
                   <p className="flex items-center gap-1.5 mt-1 text-muted-foreground"><Phone className="h-3.5 w-3.5" /> {selectedChalan.clientPhone}</p>
+                  {selectedChalan.clientEmail && (
+                    <p className="flex items-center gap-1.5 mt-1 text-muted-foreground"><Mail className="h-3.5 w-3.5" /> {selectedChalan.clientEmail}</p>
+                  )}
                   <p className="flex items-center gap-1.5 mt-1 text-muted-foreground"><MapPin className="h-3.5 w-3.5" /> {selectedChalan.clientAddress}</p>
                 </div>
                 <div>

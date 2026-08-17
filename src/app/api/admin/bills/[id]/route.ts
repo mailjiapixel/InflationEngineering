@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import connectToDatabase from '@/lib/db';
@@ -48,6 +49,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const {
       clientName,
       clientPhone,
+      clientEmail,
       clientAddress,
       items,
       subtotal,
@@ -72,6 +74,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     if (clientName !== undefined) bill.clientName = clientName;
     if (clientPhone !== undefined) bill.clientPhone = clientPhone;
+    if (clientEmail !== undefined) bill.clientEmail = clientEmail;
     if (clientAddress !== undefined) bill.clientAddress = clientAddress;
     if (items !== undefined) bill.items = items;
     if (subtotal !== undefined) bill.subtotal = subtotal;
@@ -91,7 +94,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (expectedDeliveryDate !== undefined) bill.expectedDeliveryDate = expectedDeliveryDate;
     if (termsAndConditions !== undefined) bill.termsAndConditions = termsAndConditions;
     if (vatTaxIncluded !== undefined) bill.vatTaxIncluded = vatTaxIncluded;
-    
+
     if (status === 'Paid') {
       bill.currentBillDue = 0;
       bill.cashIn = bill.gTotal;

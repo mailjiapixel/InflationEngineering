@@ -1,8 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Plus, Trash2, Search, FileText, CalendarDays, Eye, DollarSign, MoreHorizontal, Edit, Download, Printer, Users, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Search, FileText, CalendarDays, Eye, DollarSign, MoreHorizontal, Edit, Download, Printer, Users, Loader2, Phone, Mail, MapPin, User, Building } from 'lucide-react';
 import { generateBillPDF } from '@/lib/bill-invoice-generator';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,11 +49,11 @@ function SupplierBillsContent() {
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  
+
   const initialStatus = searchParams.get('status') || 'all';
   const [statusFilter, setStatusFilter] = useState(initialStatus);
   const [dateFilter, setDateFilter] = useState({ from: '', to: '' });
-  
+
   const initialPage = Math.max(1, parseInt(searchParams.get('page') || '1'));
   const [currentPage, setCurrentPage] = useState(initialPage);
 
@@ -99,12 +100,6 @@ function SupplierBillsContent() {
 
   const [settings, setSettings] = useState<any>(null);
 
-  useEffect(() => {
-    fetchBills();
-    fetchSuppliers();
-    fetchSettings();
-  }, []);
-
   const fetchSettings = async () => {
     try {
       const res = await fetch('/api/settings');
@@ -142,6 +137,12 @@ function SupplierBillsContent() {
       console.error('Error fetching suppliers:', error);
     }
   };
+
+  useEffect(() => {
+    fetchBills();
+    fetchSuppliers();
+    fetchSettings();
+  }, []);
 
   const handleAddItem = () => {
     setBillItems([...billItems, { name: '', quantity: 1, price: 0 }]);
@@ -259,7 +260,7 @@ function SupplierBillsContent() {
   const filteredBills = bills.filter(b => {
     const matchesSearch = b.billNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (b.supplier && b.supplier.name.toLowerCase().includes(searchTerm.toLowerCase()));
-      
+
     let matchesDate = true;
     if (dateFilter.from) {
       matchesDate = matchesDate && new Date(b.date) >= new Date(dateFilter.from + 'T00:00:00');
@@ -449,11 +450,10 @@ function SupplierBillsContent() {
                       ৳{bill.dueAmount.toLocaleString()}
                     </TableCell>
                     <TableCell className="text-center">
-                      <span className={`px-2 py-1 text-xs rounded-full font-semibold ${
-                        bill.status === 'Paid' ? 'bg-emerald-100 text-emerald-800' :
-                        bill.status === 'Partially Paid' ? 'bg-amber-100 text-amber-800' :
-                        'bg-rose-100 text-rose-800'
-                      }`}>
+                      <span className={`px-2 py-1 text-xs rounded-full font-semibold ${bill.status === 'Paid' ? 'bg-emerald-100 text-emerald-800' :
+                          bill.status === 'Partially Paid' ? 'bg-amber-100 text-amber-800' :
+                            'bg-rose-100 text-rose-800'
+                        }`}>
                         {bill.status}
                       </span>
                     </TableCell>
@@ -533,31 +533,63 @@ function SupplierBillsContent() {
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="supplierSelect">Supplier *</Label>
-                <select
-                  id="supplierSelect"
-                  value={selectedSupplierId}
-                  onChange={(e) => setSelectedSupplierId(e.target.value)}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  required
-                >
-                  {suppliers.map(s => (
-                    <option key={s._id} value={s._id}>{s.name} ({s.companyName || 'No Company'})</option>
-                  ))}
-                </select>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="supplierSelect" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                    <Building className="h-3.5 w-3.5" /> Supplier *
+                  </Label>
+                  <select
+                    id="supplierSelect"
+                    value={selectedSupplierId}
+                    onChange={(e) => setSelectedSupplierId(e.target.value)}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    required
+                  >
+                    <option value="" disabled>Select a supplier</option>
+                    {suppliers.map(s => (
+                      <option key={s._id} value={s._id}>
+                        {s.name} {s.companyName ? `(${s.companyName})` : ''} - {s.phone}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="billDate" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                    <CalendarDays className="h-3.5 w-3.5" /> Bill Date *
+                  </Label>
+                  <Input
+                    id="billDate"
+                    type="date"
+                    value={billDate}
+                    onChange={(e) => setBillDate(e.target.value)}
+                    className="h-10 text-sm bg-background"
+                    required
+                  />
+                </div>
               </div>
-              <div>
-                <Label htmlFor="billDate">Bill Date</Label>
-                <Input
-                  id="billDate"
-                  type="date"
-                  value={billDate}
-                  onChange={(e) => setBillDate(e.target.value)}
-                  required
-                />
-              </div>
+
+              {/* Active Supplier Preview Card */}
+              {(() => {
+                const currentSupplier = suppliers.find(s => s._id === selectedSupplierId);
+                if (!currentSupplier) return null;
+                return (
+                  <div className="bg-muted/30 border rounded-lg p-3 text-xs grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div className="flex items-center gap-1.5 font-semibold text-foreground">
+                      <User className="h-3.5 w-3.5 text-primary shrink-0" />
+                      <span>{currentSupplier.name} {currentSupplier.companyName ? `(${currentSupplier.companyName})` : ''}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-muted-foreground">
+                      <Phone className="h-3.5 w-3.5 text-primary shrink-0" />
+                      <span>{currentSupplier.phone}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-muted-foreground">
+                      <Mail className="h-3.5 w-3.5 text-primary shrink-0" />
+                      <span>{currentSupplier.email || 'No email registered'}</span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Bill items input table */}
@@ -700,11 +732,10 @@ function SupplierBillsContent() {
                   </p>
                 </div>
                 <div className="text-right">
-                  <span className={`px-2.5 py-1 text-xs rounded-full font-semibold ${
-                    selectedBill.status === 'Paid' ? 'bg-emerald-100 text-emerald-800' :
-                    selectedBill.status === 'Partially Paid' ? 'bg-amber-100 text-amber-800' :
-                    'bg-rose-100 text-rose-800'
-                  }`}>
+                  <span className={`px-2.5 py-1 text-xs rounded-full font-semibold ${selectedBill.status === 'Paid' ? 'bg-emerald-100 text-emerald-800' :
+                      selectedBill.status === 'Partially Paid' ? 'bg-amber-100 text-amber-800' :
+                        'bg-rose-100 text-rose-800'
+                    }`}>
                     {selectedBill.status}
                   </span>
                 </div>
@@ -721,6 +752,9 @@ function SupplierBillsContent() {
                   )}
                 </div>
                 <div className="text-sm text-muted-foreground mt-0.5">{selectedBill.supplier?.phone}</div>
+                {selectedBill.supplier?.email && (
+                  <div className="text-xs text-muted-foreground mt-0.5">{selectedBill.supplier.email}</div>
+                )}
               </div>
 
               <div>

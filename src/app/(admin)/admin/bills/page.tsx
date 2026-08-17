@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
@@ -36,6 +37,7 @@ import {
   MapPin,
   Phone,
   User,
+  Mail,
   CalendarDays,
   Hash,
   MoreHorizontal,
@@ -67,38 +69,44 @@ function ClientBillsContent() {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  
+
   const initialStatus = searchParams.get('status') || 'all';
   const [statusFilter, setStatusFilter] = useState(initialStatus);
   const [dateFilter, setDateFilter] = useState({ from: '', to: '' });
-  
+
   const initialPage = Math.max(1, parseInt(searchParams.get('page') || '1'));
   const [currentPage, setCurrentPage] = useState(initialPage);
-  
+
   const [settings, setSettings] = useState<any>(null);
 
   // Sync state changes to URL query parameters
   useEffect(() => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (currentPage > 1) {
-      params.set('page', currentPage.toString());
-    } else {
-      params.delete('page');
-    }
-    if (statusFilter !== 'all') {
-      params.set('status', statusFilter);
-    } else {
-      params.delete('status');
-    }
-    router.push(`/admin/bills?${params.toString()}`);
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (currentPage > 1) {
+        params.set('page', currentPage.toString());
+      } else {
+        params.delete('page');
+      }
+      if (statusFilter !== 'all') {
+        params.set('status', statusFilter);
+      } else {
+        params.delete('status');
+      }
+      router.push(`/admin/bills?${params.toString()}`);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [currentPage, statusFilter]);
 
   // Reset page when filters change
   useEffect(() => {
-    setCurrentPage(1);
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete('page');
-    router.push(`/admin/bills?${params.toString()}`);
+    const timer = setTimeout(() => {
+      setCurrentPage(1);
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete('page');
+      router.push(`/admin/bills?${params.toString()}`);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [searchTerm, statusFilter, dateFilter.from, dateFilter.to]);
 
   // Bill detail view state
@@ -112,6 +120,7 @@ function ClientBillsContent() {
   // Form states
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
+  const [clientEmail, setClientEmail] = useState('');
   const [clientAddress, setClientAddress] = useState('');
   const [billItems, setBillItems] = useState<BillItemInput[]>([
     { name: '', quantity: 1, price: 0 }
@@ -124,6 +133,11 @@ function ClientBillsContent() {
   const [cashIn, setCashIn] = useState<number>(0);
   const [expectedReceivableDate, setExpectedReceivableDate] = useState('');
 
+  // Auto suggestion states
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [activeSuggestions, setActiveSuggestions] = useState<any[]>([]);
+  const [showSuggestionsFor, setShowSuggestionsFor] = useState<'name' | 'email' | 'phone' | null>(null);
+
   // Product multi-select state
   const [productSearchTerm, setProductSearchTerm] = useState('');
   // Map of productId → variantId (null = base product, string = variant _id)
@@ -133,14 +147,77 @@ function ClientBillsContent() {
   // Phone validation
   const [phoneError, setPhoneError] = useState('');
 
-  useEffect(() => {
-    fetchBills();
-    fetchProducts();
-    fetchSettings();
-  }, [statusFilter]);
+  const fetchSuggestions = async () => {
+    try {
+      const res = await fetch('/api/admin/suggest-clients');
+      if (res.ok) {
+        const result = await res.json();
+        if (result.success) {
+          setSuggestions(result.data || []);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching client suggestions:', err);
+    }
+  };
+
+  const handleNameChange = (val: string) => {
+    setClientName(val);
+    if (!val.trim()) {
+      setActiveSuggestions([]);
+      setShowSuggestionsFor(null);
+      return;
+    }
+    const filtered = suggestions.filter(s =>
+      s.name?.toLowerCase().includes(val.toLowerCase())
+    );
+    setActiveSuggestions(filtered);
+    setShowSuggestionsFor('name');
+  };
+
+  const handleEmailChange = (val: string) => {
+    setClientEmail(val);
+    if (!val.trim()) {
+      setActiveSuggestions([]);
+      setShowSuggestionsFor(null);
+      return;
+    }
+    const filtered = suggestions.filter(s =>
+      s.email?.toLowerCase().includes(val.toLowerCase())
+    );
+    setActiveSuggestions(filtered);
+    setShowSuggestionsFor('email');
+  };
+
+  const handlePhoneChange = (val: string) => {
+    setClientPhone(val);
+    if (phoneError) validatePhone(val);
+    if (!val.trim()) {
+      setActiveSuggestions([]);
+      setShowSuggestionsFor(null);
+      return;
+    }
+    const filtered = suggestions.filter(s =>
+      s.phone?.includes(val)
+    );
+    setActiveSuggestions(filtered);
+    setShowSuggestionsFor('phone');
+  };
+
+  const handleSelectSuggestion = (suggestion: any) => {
+    setClientName(suggestion.name || '');
+    setClientPhone(suggestion.phone || '');
+    setClientEmail(suggestion.email || '');
+    setClientAddress(suggestion.address || '');
+    if (phoneError) setPhoneError('');
+    setActiveSuggestions([]);
+    setShowSuggestionsFor(null);
+  };
 
   const fetchBills = async () => {
     try {
+      // Defer state update to microtask queue to avoid synchronous setState inside useEffect warning
+      await Promise.resolve();
       setLoading(true);
       const res = await fetch(`/api/admin/bills?filter=${statusFilter}&type=bill`);
       if (!res.ok) throw new Error('Failed to fetch bills');
@@ -176,6 +253,16 @@ function ClientBillsContent() {
       console.error('Error fetching settings:', err);
     }
   };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchBills();
+      fetchProducts();
+      fetchSettings();
+      fetchSuggestions();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [statusFilter]);
 
   // Calculations
   const subtotal = billItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -298,6 +385,7 @@ function ClientBillsContent() {
       const billData = {
         clientName,
         clientPhone,
+        clientEmail: clientEmail.trim() || undefined,
         clientAddress,
         items: validItems,
         subtotal,
@@ -336,6 +424,7 @@ function ClientBillsContent() {
       setIsCreateOpen(false);
       resetForm();
       fetchBills();
+      fetchSuggestions();
     } catch (error: any) {
       toast.error(error.message || 'Error saving bill');
     } finally {
@@ -346,6 +435,7 @@ function ClientBillsContent() {
   const resetForm = () => {
     setClientName('');
     setClientPhone('');
+    setClientEmail('');
     setPhoneError('');
     setClientAddress('');
     setBillItems([{ name: '', quantity: 1, price: 0 }]);
@@ -360,6 +450,8 @@ function ClientBillsContent() {
     setProductSearchTerm('');
     setProductPickerOpen(false);
     setEditingBill(null);
+    setActiveSuggestions([]);
+    setShowSuggestionsFor(null);
   };
 
   const handleUpdateStatus = async (billId: string, currentDue: number) => {
@@ -434,7 +526,7 @@ function ClientBillsContent() {
     const matchesSearch = b.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       b.clientPhone.includes(searchTerm) ||
       b.invoiceNo.includes(searchTerm);
-      
+
     let matchesDate = true;
     if (dateFilter.from) {
       matchesDate = matchesDate && new Date(b.date) >= new Date(dateFilter.from + 'T00:00:00');
@@ -447,7 +539,7 @@ function ClientBillsContent() {
     if (statusFilter !== 'all') {
       matchesStatus = b.status?.toLowerCase() === statusFilter.toLowerCase();
     }
-    
+
     return matchesSearch && matchesDate && matchesStatus;
   });
 
@@ -659,6 +751,7 @@ function ClientBillsContent() {
                               setEditingBill(bill);
                               setClientName(bill.clientName);
                               setClientPhone(bill.clientPhone);
+                              setClientEmail(bill.clientEmail || '');
                               setClientAddress(bill.clientAddress);
                               setBillItems(bill.items);
                               setDeliveryCharge(bill.deliveryCharge);
@@ -711,49 +804,128 @@ function ClientBillsContent() {
       </div>
 
       {/* Create Bill Dialog */}
-      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+      <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if (!open) resetForm(); }}>
         <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingBill ? 'Edit' : 'Generate'} Client Bill</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Client Info */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-              <div className="space-y-2">
-                <Label htmlFor="clientName" className="text-sm font-semibold">Client Name *</Label>
+            {/* Client Info with Auto Suggestion (2 rows x 2 cols) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-muted/20 p-4 rounded-xl border">
+              {/* Client Name */}
+              <div className="space-y-1.5 relative">
+                <Label htmlFor="clientName" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <User className="h-3.5 w-3.5" /> Client Name *
+                </Label>
                 <Input
                   id="clientName"
                   value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
+                  onChange={(e) => handleNameChange(e.target.value)}
+                  onBlur={() => setTimeout(() => setShowSuggestionsFor(null), 250)}
                   placeholder="e.g. Rahim Khan"
-                  className="h-11 text-base"
+                  className="h-10 text-sm bg-background"
                   required
+                  autoComplete="off"
                 />
+                {showSuggestionsFor === 'name' && activeSuggestions.length > 0 && (
+                  <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover text-popover-foreground border rounded-md shadow-xl max-h-56 overflow-y-auto divide-y">
+                    {activeSuggestions.map((s, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => handleSelectSuggestion(s)}
+                        className="p-2.5 text-xs hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors"
+                      >
+                        <div className="font-bold">{s.name}</div>
+                        <div className="text-muted-foreground">
+                          {s.phone ? `Phone: ${s.phone}` : ''} {s.email ? `| Email: ${s.email}` : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="clientPhone" className="text-sm font-semibold">Client Phone *</Label>
+
+              {/* Client Phone */}
+              <div className="space-y-1.5 relative">
+                <Label htmlFor="clientPhone" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <Phone className="h-3.5 w-3.5" /> Client Phone *
+                </Label>
                 <Input
                   id="clientPhone"
                   value={clientPhone}
-                  onChange={(e) => {
-                    setClientPhone(e.target.value);
-                    if (phoneError) validatePhone(e.target.value);
+                  onChange={(e) => handlePhoneChange(e.target.value)}
+                  onBlur={(e) => {
+                    validatePhone(e.target.value);
+                    setTimeout(() => setShowSuggestionsFor(null), 250);
                   }}
-                  onBlur={(e) => validatePhone(e.target.value)}
                   placeholder="e.g. 01712345678"
-                  className={`h-11 text-base ${phoneError ? 'border-destructive focus-visible:ring-destructive' : ''}`}
+                  className={`h-10 text-sm bg-background ${phoneError ? 'border-destructive focus-visible:ring-destructive' : ''}`}
                   required
+                  autoComplete="off"
                 />
-                {phoneError && <p className="text-xs text-destructive mt-1">{phoneError}</p>}
+                {phoneError && <p className="text-[11px] text-destructive mt-0.5">{phoneError}</p>}
+                {showSuggestionsFor === 'phone' && activeSuggestions.length > 0 && (
+                  <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover text-popover-foreground border rounded-md shadow-xl max-h-56 overflow-y-auto divide-y">
+                    {activeSuggestions.map((s, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => handleSelectSuggestion(s)}
+                        className="p-2.5 text-xs hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors"
+                      >
+                        <div className="font-bold">{s.phone}</div>
+                        <div className="text-muted-foreground">
+                          {s.name} {s.email ? `| ${s.email}` : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="clientAddress" className="text-sm font-semibold">Client Address *</Label>
+
+              {/* Client Email (Optional) */}
+              <div className="space-y-1.5 relative">
+                <Label htmlFor="clientEmail" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <Mail className="h-3.5 w-3.5" /> Email (Optional)
+                </Label>
+                <Input
+                  id="clientEmail"
+                  type="email"
+                  value={clientEmail}
+                  onChange={(e) => handleEmailChange(e.target.value)}
+                  onBlur={() => setTimeout(() => setShowSuggestionsFor(null), 250)}
+                  placeholder="e.g. client@example.com"
+                  className="h-10 text-sm bg-background"
+                  autoComplete="off"
+                />
+                {showSuggestionsFor === 'email' && activeSuggestions.length > 0 && (
+                  <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover text-popover-foreground border rounded-md shadow-xl max-h-56 overflow-y-auto divide-y">
+                    {activeSuggestions.map((s, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => handleSelectSuggestion(s)}
+                        className="p-2.5 text-xs hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors"
+                      >
+                        <div className="font-bold">{s.email}</div>
+                        <div className="text-muted-foreground">
+                          {s.name} {s.phone ? `| ${s.phone}` : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Client Address */}
+              <div className="space-y-1.5">
+                <Label htmlFor="clientAddress" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <MapPin className="h-3.5 w-3.5" /> Client Address *
+                </Label>
                 <Input
                   id="clientAddress"
                   value={clientAddress}
                   onChange={(e) => setClientAddress(e.target.value)}
                   placeholder="e.g. Nawabpur, Dhaka"
-                  className="h-11 text-base"
+                  className="h-10 text-sm bg-background"
                   required
                 />
               </div>
@@ -1091,6 +1263,12 @@ function ClientBillsContent() {
                       <Phone className="h-4 w-4 text-primary shrink-0" />
                       <span>{selectedBill.clientPhone}</span>
                     </div>
+                    {selectedBill.clientEmail && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <Mail className="h-4 w-4 text-primary shrink-0" />
+                        <span className="text-muted-foreground">{selectedBill.clientEmail}</span>
+                      </div>
+                    )}
                     <div className="flex items-start gap-2 text-sm">
                       <MapPin className="h-4 w-4 text-primary shrink-0 mt-0.5" />
                       <span className="text-muted-foreground">{selectedBill.clientAddress}</span>
@@ -1193,9 +1371,8 @@ function ClientBillsContent() {
                     <span>Cash Received</span>
                     <span className="font-semibold">৳{Math.round(selectedBill.cashIn || 0).toLocaleString()}</span>
                   </div>
-                  <div className={`flex justify-between border-t pt-2 font-bold text-base ${
-                    selectedBill.currentBillDue > 0 ? 'text-destructive' : 'text-green-600'
-                  }`}>
+                  <div className={`flex justify-between border-t pt-2 font-bold text-base ${selectedBill.currentBillDue > 0 ? 'text-destructive' : 'text-green-600'
+                    }`}>
                     <span>Remaining Due</span>
                     <span>৳{Math.round(selectedBill.currentBillDue || 0).toLocaleString()}</span>
                   </div>

@@ -262,29 +262,33 @@ export default function AdminDashboard() {
           </Card>
         </Link>
 
-        {/* ROAS Card (NEW) */}
-        <Card className="bg-purple-500/5 border-purple-500/20 relative overflow-hidden group">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Ad ROI (ROAS)</CardTitle>
-            <Target className="h-4 w-4 text-purple-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-purple-700">{stats?.roas ? `${stats.roas}x` : '—'}</div>
-            <p className="text-xs text-muted-foreground">Revenue per ৳1 Ad Spend</p>
-          </CardContent>
-        </Card>
+        {/* Accounts Receivable Card */}
+        <Link href="/admin/bills" className="block transition-transform hover:scale-[1.02] active:scale-95">
+          <Card className="bg-emerald-500/5 border-emerald-500/20 relative overflow-hidden group h-full">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Accounts Receivable (AR)</CardTitle>
+              <ArrowDownCircle className="h-4 w-4 text-emerald-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-emerald-700">৳{Math.round(stats?.accountsReceivable || 0).toLocaleString()}</div>
+              <p className="text-xs text-muted-foreground">Due from clients & billing</p>
+            </CardContent>
+          </Card>
+        </Link>
 
-        {/* Forecast Card (NEW) */}
-        <Card className="bg-orange-500/5 border-orange-500/20 relative overflow-hidden group border-dashed">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Sales Forecast</CardTitle>
-            <LineChartIcon className="h-4 w-4 text-orange-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-orange-700">৳{Math.round(stats?.projectedMonthlyRevenue || 0).toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">Projected next 30 days</p>
-          </CardContent>
-        </Card>
+        {/* Accounts Payable Card */}
+        <Link href="/admin/supplier-bills" className="block transition-transform hover:scale-[1.02] active:scale-95">
+          <Card className="bg-rose-500/5 border-rose-500/20 relative overflow-hidden group h-full">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Accounts Payable (AP)</CardTitle>
+              <ArrowUpCircle className="h-4 w-4 text-rose-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-rose-700">৳{Math.round(stats?.accountsPayable || 0).toLocaleString()}</div>
+              <p className="text-xs text-muted-foreground">Owed to suppliers & bills</p>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       <div className="grid gap-4 grid-cols-1">

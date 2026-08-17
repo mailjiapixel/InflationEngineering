@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client"
 
 import * as React from "react"
@@ -275,8 +276,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   return (
     <Sidebar {...props}>
-      <SidebarHeader className="border-b h-14 lg:h-[60px] px-4 flex items-center">
-        <Logo textClassName="text-sm md:text-base font-black tracking-wide whitespace-nowrap" />
+      <SidebarHeader className="border-b h-14 lg:h-[60px] px-3 flex items-center overflow-hidden">
+        <Logo
+          className="max-w-full overflow-hidden"
+          imageClassName="size-7 shrink-0"
+          textClassName="text-xs lg:text-sm font-bold tracking-tight truncate uppercase"
+        />
       </SidebarHeader>
       <SidebarContent className="gap-0">
         <NavMain items={data.navMain} pathname={pathname} role={role} />

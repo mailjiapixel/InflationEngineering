@@ -29,6 +29,8 @@ import {
   Eye,
   MapPin,
   Phone,
+  User,
+  Mail,
   CalendarDays,
   Hash,
   ArrowRight,
@@ -78,13 +80,7 @@ function ClientOffersContent() {
     router.push(`/admin/offers?${params.toString()}`);
   }, [currentPage]);
 
-  // Reset page when search term changes
-  useEffect(() => {
-    setCurrentPage(1);
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete('page');
-    router.push(`/admin/offers?${params.toString()}`);
-  }, [searchTerm]);
+
 
   // Offer detail view state
   const [selectedOffer, setSelectedOffer] = useState<any>(null);
@@ -97,6 +93,7 @@ function ClientOffersContent() {
   // Form states
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
+  const [clientEmail, setClientEmail] = useState('');
   const [clientAddress, setClientAddress] = useState('');
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState<string>('');
   const [termsAndConditions, setTermsAndConditions] = useState<string>('');
@@ -109,6 +106,11 @@ function ClientOffersContent() {
   const [discountType, setDiscountType] = useState<'fixed' | 'percentage'>('fixed');
   const [discountValue, setDiscountValue] = useState<number>(0);
 
+  // Auto suggestion states
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [activeSuggestions, setActiveSuggestions] = useState<any[]>([]);
+  const [showSuggestionsFor, setShowSuggestionsFor] = useState<'name' | 'email' | 'phone' | null>(null);
+
   // Product multi-select state
   const [productSearchTerm, setProductSearchTerm] = useState('');
   const [selectedProductVariants, setSelectedProductVariants] = useState<Record<string, string | null>>({});
@@ -117,14 +119,24 @@ function ClientOffersContent() {
   // Phone validation
   const [phoneError, setPhoneError] = useState('');
 
-  useEffect(() => {
-    fetchOffers();
-    fetchProducts();
-    fetchSettings();
-  }, []);
+  const fetchSuggestions = async () => {
+    try {
+      const res = await fetch('/api/admin/suggest-clients');
+      if (res.ok) {
+        const result = await res.json();
+        if (result.success) {
+          setSuggestions(result.data || []);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching client suggestions:', err);
+    }
+  };
 
   const fetchOffers = async () => {
     try {
+      // Defer state update to microtask queue to avoid synchronous setState inside useEffect warning
+      await Promise.resolve();
       setLoading(true);
       const res = await fetch('/api/admin/bills?type=offer');
       if (!res.ok) throw new Error('Failed to fetch offers');
@@ -159,6 +171,69 @@ function ClientOffersContent() {
     } catch (err) {
       console.error('Error fetching settings:', err);
     }
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchOffers();
+      fetchProducts();
+      fetchSettings();
+      fetchSuggestions();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleNameChange = (val: string) => {
+    setClientName(val);
+    if (!val.trim()) {
+      setActiveSuggestions([]);
+      setShowSuggestionsFor(null);
+      return;
+    }
+    const filtered = suggestions.filter(s =>
+      s.name?.toLowerCase().includes(val.toLowerCase())
+    );
+    setActiveSuggestions(filtered);
+    setShowSuggestionsFor('name');
+  };
+
+  const handleEmailChange = (val: string) => {
+    setClientEmail(val);
+    if (!val.trim()) {
+      setActiveSuggestions([]);
+      setShowSuggestionsFor(null);
+      return;
+    }
+    const filtered = suggestions.filter(s =>
+      s.email?.toLowerCase().includes(val.toLowerCase())
+    );
+    setActiveSuggestions(filtered);
+    setShowSuggestionsFor('email');
+  };
+
+  const handlePhoneChange = (val: string) => {
+    setClientPhone(val);
+    if (phoneError) validatePhone(val);
+    if (!val.trim()) {
+      setActiveSuggestions([]);
+      setShowSuggestionsFor(null);
+      return;
+    }
+    const filtered = suggestions.filter(s =>
+      s.phone?.includes(val)
+    );
+    setActiveSuggestions(filtered);
+    setShowSuggestionsFor('phone');
+  };
+
+  const handleSelectSuggestion = (suggestion: any) => {
+    setClientName(suggestion.name || '');
+    setClientPhone(suggestion.phone || '');
+    setClientEmail(suggestion.email || '');
+    setClientAddress(suggestion.address || '');
+    if (phoneError) setPhoneError('');
+    setActiveSuggestions([]);
+    setShowSuggestionsFor(null);
   };
 
   // Calculations
@@ -281,6 +356,7 @@ function ClientOffersContent() {
       const offerData = {
         clientName,
         clientPhone,
+        clientEmail: clientEmail.trim() || undefined,
         clientAddress,
         items: validItems,
         subtotal,
@@ -321,6 +397,7 @@ function ClientOffersContent() {
       setIsCreateOpen(false);
       resetForm();
       fetchOffers();
+      fetchSuggestions();
     } catch (error: any) {
       toast.error(error.message || 'Error creating quotation');
     } finally {
@@ -331,6 +408,7 @@ function ClientOffersContent() {
   const resetForm = () => {
     setClientName('');
     setClientPhone('');
+    setClientEmail('');
     setPhoneError('');
     setClientAddress('');
     setBillItems([{ name: '', quantity: 1, price: 0 }]);
@@ -345,6 +423,8 @@ function ClientOffersContent() {
     setExpectedDeliveryDate('');
     setTermsAndConditions('');
     setVatTaxIncluded(true);
+    setActiveSuggestions([]);
+    setShowSuggestionsFor(null);
   };
 
   const handleConvertToChalan = async (offer: any) => {
@@ -362,6 +442,7 @@ function ClientOffersContent() {
         const challanData = {
           clientName: offer.clientName,
           clientPhone: offer.clientPhone,
+          clientEmail: offer.clientEmail || undefined,
           clientAddress: offer.clientAddress,
           items: offer.items,
           subtotal: offer.subtotal,
@@ -467,7 +548,12 @@ function ClientOffersContent() {
                 placeholder="Search by client or invoice..."
                 className="pl-8"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  if (currentPage !== 1) {
+                    setCurrentPage(1);
+                  }
+                }}
               />
             </div>
           </div>
@@ -529,6 +615,7 @@ function ClientOffersContent() {
                                   setEditingOffer(offer);
                                   setClientName(offer.clientName);
                                   setClientPhone(offer.clientPhone);
+                                  setClientEmail(offer.clientEmail || '');
                                   setClientAddress(offer.clientAddress);
                                   setBillItems(offer.items);
                                   setDeliveryCharge(offer.deliveryCharge);
@@ -595,39 +682,122 @@ function ClientOffersContent() {
             <DialogTitle>{editingOffer ? 'Edit' : 'Create New'} Quotation / Offer</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Client Info */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="cName">Client Name *</Label>
+            {/* Client Info with Auto Suggestion (2 rows x 2 cols) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-muted/20 p-4 rounded-xl border">
+              {/* Client Name */}
+              <div className="space-y-1.5 relative">
+                <Label htmlFor="cName" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <User className="h-3.5 w-3.5" /> Client Name *
+                </Label>
                 <Input
                   id="cName"
                   placeholder="e.g. Rahim & Bros"
                   value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
+                  onChange={(e) => handleNameChange(e.target.value)}
+                  onBlur={() => setTimeout(() => setShowSuggestionsFor(null), 250)}
+                  className="h-10 text-sm bg-background"
                   required
+                  autoComplete="off"
                 />
+                {showSuggestionsFor === 'name' && activeSuggestions.length > 0 && (
+                  <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover text-popover-foreground border rounded-md shadow-xl max-h-56 overflow-y-auto divide-y">
+                    {activeSuggestions.map((s, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => handleSelectSuggestion(s)}
+                        className="p-2.5 text-xs hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors"
+                      >
+                        <div className="font-bold">{s.name}</div>
+                        <div className="text-muted-foreground">
+                          {s.phone ? `Phone: ${s.phone}` : ''} {s.email ? `| Email: ${s.email}` : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="cPhone">Client Phone *</Label>
+
+              {/* Client Phone */}
+              <div className="space-y-1.5 relative">
+                <Label htmlFor="cPhone" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <Phone className="h-3.5 w-3.5" /> Client Phone *
+                </Label>
                 <Input
                   id="cPhone"
                   placeholder="e.g. 017XXXXXXXX"
                   value={clientPhone}
-                  onChange={(e) => {
-                    setClientPhone(e.target.value);
-                    if (e.target.value) validatePhone(e.target.value);
+                  onChange={(e) => handlePhoneChange(e.target.value)}
+                  onBlur={(e) => {
+                    validatePhone(e.target.value);
+                    setTimeout(() => setShowSuggestionsFor(null), 250);
                   }}
+                  className={`h-10 text-sm bg-background ${phoneError ? 'border-destructive focus-visible:ring-destructive' : ''}`}
                   required
+                  autoComplete="off"
                 />
-                {phoneError && <p className="text-xs text-destructive">{phoneError}</p>}
+                {phoneError && <p className="text-[11px] text-destructive mt-0.5">{phoneError}</p>}
+                {showSuggestionsFor === 'phone' && activeSuggestions.length > 0 && (
+                  <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover text-popover-foreground border rounded-md shadow-xl max-h-56 overflow-y-auto divide-y">
+                    {activeSuggestions.map((s, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => handleSelectSuggestion(s)}
+                        className="p-2.5 text-xs hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors"
+                      >
+                        <div className="font-bold">{s.phone}</div>
+                        <div className="text-muted-foreground">
+                          {s.name} {s.email ? `| ${s.email}` : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="cAddr">Client Address *</Label>
+
+              {/* Client Email (Optional) */}
+              <div className="space-y-1.5 relative">
+                <Label htmlFor="cEmail" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <Mail className="h-3.5 w-3.5" /> Email (Optional)
+                </Label>
+                <Input
+                  id="cEmail"
+                  type="email"
+                  placeholder="e.g. client@example.com"
+                  value={clientEmail}
+                  onChange={(e) => handleEmailChange(e.target.value)}
+                  onBlur={() => setTimeout(() => setShowSuggestionsFor(null), 250)}
+                  className="h-10 text-sm bg-background"
+                  autoComplete="off"
+                />
+                {showSuggestionsFor === 'email' && activeSuggestions.length > 0 && (
+                  <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover text-popover-foreground border rounded-md shadow-xl max-h-56 overflow-y-auto divide-y">
+                    {activeSuggestions.map((s, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => handleSelectSuggestion(s)}
+                        className="p-2.5 text-xs hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors"
+                      >
+                        <div className="font-bold">{s.email}</div>
+                        <div className="text-muted-foreground">
+                          {s.name} {s.phone ? `| ${s.phone}` : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Client Address */}
+              <div className="space-y-1.5">
+                <Label htmlFor="cAddr" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <MapPin className="h-3.5 w-3.5" /> Client Address *
+                </Label>
                 <Input
                   id="cAddr"
                   placeholder="e.g. Banani, Dhaka"
                   value={clientAddress}
                   onChange={(e) => setClientAddress(e.target.value)}
+                  className="h-10 text-sm bg-background"
                   required
                 />
               </div>
@@ -931,6 +1101,9 @@ function ClientOffersContent() {
                   <h4 className="font-semibold text-muted-foreground mb-1 uppercase tracking-wider text-xs">Quotation To</h4>
                   <p className="font-medium text-base">{selectedOffer.clientName}</p>
                   <p className="flex items-center gap-1.5 mt-1 text-muted-foreground"><Phone className="h-3.5 w-3.5" /> {selectedOffer.clientPhone}</p>
+                  {selectedOffer.clientEmail && (
+                    <p className="flex items-center gap-1.5 mt-1 text-muted-foreground"><Mail className="h-3.5 w-3.5" /> {selectedOffer.clientEmail}</p>
+                  )}
                   <p className="flex items-center gap-1.5 mt-1 text-muted-foreground"><MapPin className="h-3.5 w-3.5" /> {selectedOffer.clientAddress}</p>
                 </div>
                 <div>

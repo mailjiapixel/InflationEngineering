@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import connectToDatabase from '@/lib/db';
@@ -13,10 +14,10 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const filter = searchParams.get('filter'); // 'all', 'paid', 'due'
     const type = searchParams.get('type') || 'bill'; // 'offer', 'chalan', 'bill'
-    
+
     await connectToDatabase();
 
-    let query: any = {};
+    const query: any = {};
     if (type === 'bill') {
       query.$or = [{ documentType: 'bill' }, { documentType: { $exists: false } }];
     } else {
@@ -48,6 +49,7 @@ export async function POST(req: NextRequest) {
     const {
       clientName,
       clientPhone,
+      clientEmail,
       clientAddress,
       items,
       subtotal,
@@ -79,7 +81,7 @@ export async function POST(req: NextRequest) {
     // Generate unique sequential document number
     const docType = documentType || 'bill';
     const lastDoc = await Bill.findOne({ documentType: docType }).sort({ createdAt: -1 });
-    
+
     let lastBillForFallback = null;
     if (!lastDoc && docType === 'bill') {
       lastBillForFallback = await Bill.findOne({ documentType: { $exists: false } }).sort({ createdAt: -1 });
@@ -103,6 +105,7 @@ export async function POST(req: NextRequest) {
     const newBill = new Bill({
       clientName,
       clientPhone,
+      clientEmail: clientEmail || undefined,
       clientAddress,
       invoiceNo,
       items,
@@ -132,7 +135,7 @@ export async function POST(req: NextRequest) {
     if (docType === 'bill') {
       try {
         const { logLedgerTransaction } = await import('@/lib/ledgerHelper');
-        
+
         // Debit Accounts Receivable by the grand total of the bill
         await logLedgerTransaction(
           'AR',

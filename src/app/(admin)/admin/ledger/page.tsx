@@ -348,29 +348,29 @@ function AccountsLedgerContent() {
       </div>
 
       {/* Account Balance Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
         {accounts.map((acc) => {
           const isCash = acc.code === 'CASH';
           const isBank = acc.code === 'BANK';
 
           return (
             <Card key={acc._id} className="relative overflow-hidden">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+              <CardHeader className="flex flex-row items-center justify-between pb-2 p-3 sm:p-6 sm:pb-2">
+                <CardTitle className="text-[11px] sm:text-sm font-semibold uppercase tracking-wider text-muted-foreground truncate">
                   {acc.name}
                 </CardTitle>
                 {isCash ? (
-                  <Wallet className="h-5 w-5 text-primary" />
+                  <Wallet className="h-4 w-4 sm:h-5 sm:w-5 text-primary shrink-0" />
                 ) : isBank ? (
-                  <Landmark className="h-5 w-5 text-primary" />
+                  <Landmark className="h-4 w-4 sm:h-5 sm:w-5 text-primary shrink-0" />
                 ) : (
-                  <DollarSign className="h-5 w-5 text-primary" />
+                  <DollarSign className="h-4 w-4 sm:h-5 sm:w-5 text-primary shrink-0" />
                 )}
               </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="text-3xl font-bold tracking-tight">৳{Math.round(acc.currentBalance)}</div>
-                <div className="flex items-center justify-between text-xs text-muted-foreground border-t pt-2">
-                  <span>Opening: ৳{Math.round(acc.openingBalance || 0)}</span>
+              <CardContent className="space-y-2 sm:space-y-3 p-3 sm:p-6 pt-0 sm:pt-0">
+                <div className="text-xl sm:text-3xl font-bold tracking-tight">৳{Math.round(acc.currentBalance).toLocaleString()}</div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between text-[10px] sm:text-xs text-muted-foreground border-t pt-2 gap-1">
+                  <span className="truncate">Opening: ৳{Math.round(acc.openingBalance || 0).toLocaleString()}</span>
                   <Button
                     variant="ghost"
                     size="xs"

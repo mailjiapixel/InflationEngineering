@@ -170,11 +170,67 @@ function ClientChalansContent() {
   };
 
   useEffect(() => {
-    fetchChalans();
-    fetchProducts();
-    fetchSettings();
-    fetchSuggestions();
+    const timer = setTimeout(() => {
+      fetchChalans();
+      fetchProducts();
+      fetchSettings();
+      fetchSuggestions();
+    }, 0);
+    return () => clearTimeout(timer);
   }, []);
+
+  const handleNameChange = (val: string) => {
+    setClientName(val);
+    if (!val.trim()) {
+      setActiveSuggestions([]);
+      setShowSuggestionsFor(null);
+      return;
+    }
+    const filtered = suggestions.filter(s =>
+      s.name?.toLowerCase().includes(val.toLowerCase())
+    );
+    setActiveSuggestions(filtered);
+    setShowSuggestionsFor('name');
+  };
+
+  const handleEmailChange = (val: string) => {
+    setClientEmail(val);
+    if (!val.trim()) {
+      setActiveSuggestions([]);
+      setShowSuggestionsFor(null);
+      return;
+    }
+    const filtered = suggestions.filter(s =>
+      s.email?.toLowerCase().includes(val.toLowerCase())
+    );
+    setActiveSuggestions(filtered);
+    setShowSuggestionsFor('email');
+  };
+
+  const handlePhoneChange = (val: string) => {
+    setClientPhone(val);
+    if (phoneError) validatePhone(val);
+    if (!val.trim()) {
+      setActiveSuggestions([]);
+      setShowSuggestionsFor(null);
+      return;
+    }
+    const filtered = suggestions.filter(s =>
+      s.phone?.includes(val)
+    );
+    setActiveSuggestions(filtered);
+    setShowSuggestionsFor('phone');
+  };
+
+  const handleSelectSuggestion = (suggestion: any) => {
+    setClientName(suggestion.name || '');
+    setClientPhone(suggestion.phone || '');
+    setClientEmail(suggestion.email || '');
+    setClientAddress(suggestion.address || '');
+    if (phoneError) setPhoneError('');
+    setActiveSuggestions([]);
+    setShowSuggestionsFor(null);
+  };
 
   const validatePhone = (phone: string) => {
     const bdPhoneRegex = /^(?:\+?88)?01[3-9]\d{8}$/;

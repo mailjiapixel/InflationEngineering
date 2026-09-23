@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { format, isValid } from 'date-fns';
+import { toast } from 'sonner';
 
 export function numberToWords(num: number): string {
   if (num === 0) return 'Zero';
@@ -379,15 +380,18 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
             margin-top: auto;
           }
           @media print {
+            .no-print {
+              display: none !important;
+            }
             body {
-              padding: 0;
-              margin: 0;
+              padding: 0 !important;
+              margin: 0 !important;
             }
             .bill-container {
-              padding: 0;
-              max-width: 100%;
-              width: 100%;
-              min-height: 277mm;
+              padding: 0 !important;
+              max-width: 100% !important;
+              width: 100% !important;
+              min-height: 277mm !important;
             }
             @page {
               size: A4 portrait;
@@ -397,6 +401,20 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
         </style>
       </head>
       <body>
+        <div class="no-print" style="position: sticky; top: 0; z-index: 9999; background: #ffffff; border-bottom: 1px solid #e2e8f0; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin: -20px -20px 24px -20px;">
+          <div style="font-weight: 600; font-size: 14px; color: #1e293b; display: flex; align-items: center; gap: 8px;">
+            <span>${title} #${invoiceId}</span>
+          </div>
+          <div style="display: flex; gap: 10px;">
+            <button onclick="window.print()" style="cursor: pointer; background-color: ${primary}; color: ${primaryForeground}; border: none; padding: 8px 18px; border-radius: 6px; font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+              Print / Save PDF
+            </button>
+            <button onclick="window.close()" style="cursor: pointer; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; padding: 8px 16px; border-radius: 6px; font-weight: 500; font-size: 13px;">
+              Close
+            </button>
+          </div>
+        </div>
         <div class="bill-container">
           <div class="header">
             <div class="brand-logo-container">
@@ -558,6 +576,7 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
 
   const printWindow = window.open('', '_blank');
   if (printWindow) {
+    printWindow.document.open();
     printWindow.document.write(htmlContent);
     printWindow.document.close();
 
@@ -565,16 +584,27 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
     const triggerPrint = () => {
       if (hasPrinted) return;
       hasPrinted = true;
-      printWindow.focus();
-      printWindow.print();
-      if (mode === 'print') {
-        printWindow.close();
+      try {
+        printWindow.focus();
+        printWindow.print();
+      } catch (err) {
+        console.error('Print trigger error:', err);
       }
     };
 
-    printWindow.onload = triggerPrint;
+    if (printWindow.document.fonts && printWindow.document.fonts.ready) {
+      printWindow.document.fonts.ready.then(() => {
+        setTimeout(triggerPrint, 250);
+      });
+    }
 
-    setTimeout(triggerPrint, 800);
+    printWindow.onload = () => {
+      setTimeout(triggerPrint, 250);
+    };
+
+    setTimeout(triggerPrint, 1000);
+  } else {
+    toast.error('Pop-up was blocked. Please allow pop-ups for this website to print/view PDF.');
   }
 }
 

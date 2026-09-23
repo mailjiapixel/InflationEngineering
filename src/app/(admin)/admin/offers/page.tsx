@@ -40,7 +40,7 @@ import {
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
-import { generateBillPDF } from '@/lib/bill-invoice-generator';
+import { generateBillPDF, generateDescriptionHtml } from '@/lib/bill-invoice-generator';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -51,9 +51,37 @@ import { Pagination } from '@/components/ui/pagination';
 
 interface BillItemInput {
   name: string;
+  description?: string;
   quantity: number;
   price: number;
 }
+
+const extractTextFromDescription = (description?: string): string => {
+  if (!description) return '';
+  const trimmed = description.trim();
+  // Try to parse as TipTap JSON directly
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      const BLOCK_TYPES = new Set(['paragraph','heading','blockquote','bulletList','orderedList','listItem','codeBlock','horizontalRule']);
+      const getText = (node: any, isBlock?: boolean): string => {
+        if (node.type === 'text') return node.text || '';
+        if (node.type === 'hardBreak') return '\n';
+        if (node.content && Array.isArray(node.content)) {
+          const inner = node.content.map((n: any) => getText(n)).join('');
+          if (BLOCK_TYPES.has(node.type)) return inner + '\n';
+          return inner;
+        }
+        return '';
+      };
+      return getText(parsed).trim();
+    } catch (e) {
+      // Not valid JSON, fall through
+    }
+  }
+  // Strip any HTML tags and return
+  return trimmed.replace(/<[^>]*>?/gm, '').trim();
+};
 
 function ClientOffersContent() {
   const router = useRouter();
@@ -99,7 +127,7 @@ function ClientOffersContent() {
   const [termsAndConditions, setTermsAndConditions] = useState<string>('');
   const [vatTaxIncluded, setVatTaxIncluded] = useState<boolean>(true);
   const [billItems, setBillItems] = useState<BillItemInput[]>([
-    { name: '', quantity: 1, price: 0 }
+    { name: '', description: '', quantity: 1, price: 0 }
   ]);
   const [deliveryCharge, setDeliveryCharge] = useState<number>(0);
   const [serviceFee, setServiceFee] = useState<number>(0);
@@ -283,12 +311,12 @@ function ClientOffersContent() {
       if (!prod) return;
 
       if (variantId === null) {
-        newItems.push({ name: prod.name, price: prod.salePrice || prod.price || 0, quantity: 1 });
+        newItems.push({ name: prod.name, description: extractTextFromDescription(prod.description), price: prod.salePrice || prod.price || 0, quantity: 1 });
       } else {
         const variant = (prod.variants || []).find((v: any) => v._id === variantId);
         if (!variant) return;
         const label = [prod.name, variant.color, variant.size].filter(Boolean).join(' — ');
-        newItems.push({ name: label, price: variant.salePrice || variant.price || 0, quantity: 1 });
+        newItems.push({ name: label, description: extractTextFromDescription(prod.description), price: variant.salePrice || variant.price || 0, quantity: 1 });
       }
     });
 
@@ -305,12 +333,12 @@ function ClientOffersContent() {
   };
 
   const handleAddItemRow = () => {
-    setBillItems([...billItems, { name: '', quantity: 1, price: 0 }]);
+    setBillItems([...billItems, { name: '', description: '', quantity: 1, price: 0 }]);
   };
 
   const handleRemoveItemRow = (index: number) => {
     if (billItems.length === 1) {
-      setBillItems([{ name: '', quantity: 1, price: 0 }]);
+      setBillItems([{ name: '', description: '', quantity: 1, price: 0 }]);
     } else {
       setBillItems(billItems.filter((_, i) => i !== index));
     }
@@ -322,6 +350,8 @@ function ClientOffersContent() {
       updated[index].quantity = value === '' ? '' as any : Math.max(1, parseInt(value) || 1);
     } else if (field === 'price') {
       updated[index].price = value === '' ? '' as any : Math.max(0, parseFloat(value) || 0);
+    } else if (field === 'description') {
+      updated[index].description = value;
     } else {
       updated[index].name = value;
     }
@@ -411,7 +441,7 @@ function ClientOffersContent() {
     setClientEmail('');
     setPhoneError('');
     setClientAddress('');
-    setBillItems([{ name: '', quantity: 1, price: 0 }]);
+    setBillItems([{ name: '', description: '', quantity: 1, price: 0 }]);
     setDeliveryCharge(0);
     setServiceFee(0);
     setDiscountType('fixed');
@@ -526,7 +556,7 @@ function ClientOffersContent() {
   );
 
   return (
-    <div className="flex-1 space-y-6 px-0 py-4 md:p-8">
+    <div className="flex-1 space-y-6 px-4 py-4">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Client Quotations / Offers</h2>
@@ -539,7 +569,7 @@ function ClientOffersContent() {
 
       {/* Offers Table */}
       <Card>
-        <CardHeader>
+        <CardHeader className="px-4 py-5">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <CardTitle>Quotations List</CardTitle>
             <div className="relative w-full md:w-72">
@@ -558,7 +588,7 @@ function ClientOffersContent() {
             </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-4">
           {loading ? (
             <div className="flex h-32 items-center justify-center">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -573,22 +603,24 @@ function ClientOffersContent() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Quotation No</TableHead>
-                    <TableHead>Client Name</TableHead>
-                    <TableHead>Phone</TableHead>
-                    <TableHead>Date</TableHead>
+                    <TableHead className="w-[140px]">Quotation No</TableHead>
+                    <TableHead className="w-[220px] max-w-[240px]">Client Name</TableHead>
+                    <TableHead className="w-[140px]">Phone</TableHead>
+                    <TableHead className="w-[120px]">Date</TableHead>
                     <TableHead className="text-right">Total Offer (৳)</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead className="text-right w-[90px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {paginatedOffers.map((offer) => (
                     <TableRow key={offer._id}>
-                      <TableCell className="font-semibold">{offer.invoiceNo}</TableCell>
-                      <TableCell>{offer.clientName}</TableCell>
-                      <TableCell>{offer.clientPhone}</TableCell>
-                      <TableCell>{format(new Date(offer.date), 'dd MMM yyyy')}</TableCell>
-                      <TableCell className="text-right font-medium">৳{Math.round(offer.total)}</TableCell>
+                      <TableCell className="font-semibold whitespace-nowrap">{offer.invoiceNo}</TableCell>
+                      <TableCell className="max-w-[240px] whitespace-normal break-words leading-snug">
+                        {offer.clientName}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">{offer.clientPhone}</TableCell>
+                      <TableCell className="whitespace-nowrap">{format(new Date(offer.date), 'dd MMM yyyy')}</TableCell>
+                      <TableCell className="text-right font-medium whitespace-nowrap">৳{Math.round(offer.total)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <Button
@@ -825,12 +857,18 @@ function ClientOffersContent() {
             <div className="space-y-3">
               {billItems.map((item, index) => (
                 <div key={index} className="flex items-center gap-3">
-                  <div className="flex-1">
+                  <div className="flex-1 space-y-1">
                     <Input
-                      placeholder="Item name / Description"
+                      placeholder="Title"
                       value={item.name}
                       onChange={(e) => handleItemChange(index, 'name', e.target.value)}
                       required
+                    />
+                    <Input
+                      placeholder="Description (Optional)"
+                      value={item.description || ''}
+                      onChange={(e) => handleItemChange(index, 'description', e.target.value)}
+                      className="text-xs h-8 text-muted-foreground"
                     />
                   </div>
                   <div className="w-24">
@@ -1090,7 +1128,7 @@ function ClientOffersContent() {
 
       {/* Offer Detail View Dialog */}
       <Dialog open={!!selectedOffer} onOpenChange={(open) => { if (!open) setSelectedOffer(null); }}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Quotation Details — {selectedOffer?.invoiceNo}</DialogTitle>
           </DialogHeader>
@@ -1099,17 +1137,17 @@ function ClientOffersContent() {
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <h4 className="font-semibold text-muted-foreground mb-1 uppercase tracking-wider text-xs">Quotation To</h4>
-                  <p className="font-medium text-base">{selectedOffer.clientName}</p>
-                  <p className="flex items-center gap-1.5 mt-1 text-muted-foreground"><Phone className="h-3.5 w-3.5" /> {selectedOffer.clientPhone}</p>
+                  <p className="font-medium text-base break-words">{selectedOffer.clientName}</p>
+                  <p className="flex items-center gap-1.5 mt-1 text-muted-foreground"><Phone className="h-3.5 w-3.5 shrink-0" /> {selectedOffer.clientPhone}</p>
                   {selectedOffer.clientEmail && (
-                    <p className="flex items-center gap-1.5 mt-1 text-muted-foreground"><Mail className="h-3.5 w-3.5" /> {selectedOffer.clientEmail}</p>
+                    <p className="flex items-center gap-1.5 mt-1 text-muted-foreground break-all"><Mail className="h-3.5 w-3.5 shrink-0" /> {selectedOffer.clientEmail}</p>
                   )}
-                  <p className="flex items-center gap-1.5 mt-1 text-muted-foreground"><MapPin className="h-3.5 w-3.5" /> {selectedOffer.clientAddress}</p>
+                  <p className="flex items-center gap-1.5 mt-1 text-muted-foreground break-words"><MapPin className="h-3.5 w-3.5 shrink-0" /> {selectedOffer.clientAddress}</p>
                 </div>
                 <div>
                   <h4 className="font-semibold text-muted-foreground mb-1 uppercase tracking-wider text-xs">Document Info</h4>
-                  <p className="flex items-center gap-1.5 font-medium"><Hash className="h-3.5 w-3.5 text-primary" /> {selectedOffer.invoiceNo}</p>
-                  <p className="flex items-center gap-1.5 mt-1 text-muted-foreground"><CalendarDays className="h-3.5 w-3.5" /> {format(new Date(selectedOffer.date), 'dd MMM yyyy')}</p>
+                  <p className="flex items-center gap-1.5 font-medium"><Hash className="h-3.5 w-3.5 text-primary shrink-0" /> {selectedOffer.invoiceNo}</p>
+                  <p className="flex items-center gap-1.5 mt-1 text-muted-foreground"><CalendarDays className="h-3.5 w-3.5 shrink-0" /> {format(new Date(selectedOffer.date), 'dd MMM yyyy')}</p>
                   {selectedOffer.expectedDeliveryDate && (
                     <p className="text-xs text-muted-foreground mt-1">
                       <strong>Exp. Delivery:</strong> {format(new Date(selectedOffer.expectedDeliveryDate), 'dd MMM yyyy')}
@@ -1124,27 +1162,35 @@ function ClientOffersContent() {
               {selectedOffer.termsAndConditions && (
                 <div className="text-xs bg-muted/50 p-2.5 rounded border">
                   <span className="font-semibold text-muted-foreground block mb-1">Terms & Conditions:</span>
-                  <p className="whitespace-pre-wrap">{selectedOffer.termsAndConditions}</p>
+                  <p className="whitespace-pre-wrap break-words">{selectedOffer.termsAndConditions}</p>
                 </div>
               )}
 
-              <div className="border rounded-md overflow-hidden">
-                <Table>
+              <div className="border rounded-md overflow-x-auto">
+                <Table className="w-full">
                   <TableHeader>
                     <TableRow className="bg-muted hover:bg-muted">
-                      <TableHead>Description</TableHead>
-                      <TableHead className="text-center w-16">Qty</TableHead>
-                      <TableHead className="text-right w-24">Rate</TableHead>
-                      <TableHead className="text-right w-28">Amount</TableHead>
+                      <TableHead className="min-w-[200px]">Title/Description</TableHead>
+                      <TableHead className="text-center w-16 whitespace-nowrap">Qty</TableHead>
+                      <TableHead className="text-right w-24 whitespace-nowrap">Rate</TableHead>
+                      <TableHead className="text-right w-28 whitespace-nowrap">Amount</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {selectedOffer.items.map((item: any, i: number) => (
                       <TableRow key={i}>
-                        <TableCell className="font-medium">{item.name}</TableCell>
-                        <TableCell className="text-center">{item.quantity}</TableCell>
-                        <TableCell className="text-right">৳{Math.round(item.price)}</TableCell>
-                        <TableCell className="text-right font-medium">৳{Math.round(item.price * item.quantity)}</TableCell>
+                        <TableCell className="max-w-md whitespace-normal break-words">
+                          <div className="font-medium leading-snug">{item.name}</div>
+                          {item.description && (
+                            <div 
+                              className="text-xs text-muted-foreground mt-1 break-words leading-relaxed [&_p]:my-0.5 [&_ul]:pl-4 [&_ul]:list-disc [&_ol]:pl-4 [&_ol]:list-decimal"
+                              dangerouslySetInnerHTML={{ __html: generateDescriptionHtml(item.description) }}
+                            />
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center whitespace-nowrap">{item.quantity}</TableCell>
+                        <TableCell className="text-right whitespace-nowrap">৳{Math.round(item.price)}</TableCell>
+                        <TableCell className="text-right font-medium whitespace-nowrap">৳{Math.round(item.price * item.quantity)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

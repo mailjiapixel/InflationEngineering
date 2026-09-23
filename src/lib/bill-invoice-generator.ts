@@ -51,6 +51,70 @@ export function numberToWords(num: number): string {
   return convertBengaliStyle(num).trim();
 }
 
+// Converts TipTap JSON description to safe HTML for PDF embedding
+// Mirrors the renderNode logic from src/lib/server-html.ts
+function renderDescriptionNode(node: any): string {
+  if (!node) return '';
+  if (node.type === 'text') {
+    let text = (node.text || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+    if (node.marks) {
+      node.marks.forEach((mark: any) => {
+        if (mark.type === 'bold') text = `<strong>${text}</strong>`;
+        else if (mark.type === 'italic') text = `<em>${text}</em>`;
+        else if (mark.type === 'underline') text = `<u>${text}</u>`;
+        else if (mark.type === 'strike') text = `<s>${text}</s>`;
+        else if (mark.type === 'textStyle') {
+          const color = mark.attrs?.color;
+          if (color) text = `<span style="color:${color}">${text}</span>`;
+        } else if (mark.type === 'highlight') {
+          const color = mark.attrs?.color;
+          text = color ? `<mark style="background-color:${color}">${text}</mark>` : `<mark>${text}</mark>`;
+        }
+      });
+    }
+    return text;
+  }
+  const children = node.content ? node.content.map(renderDescriptionNode).join('') : '';
+  switch (node.type) {
+    case 'doc': return children;
+    case 'paragraph': return `<p style="margin:2px 0">${children || '&nbsp;'}</p>`;
+    case 'hardBreak': return '<br>';
+    case 'heading': {
+      const level = Math.max(1, Math.min(6, Number(node.attrs?.level) || 2));
+      return `<h${level} style="margin:4px 0;font-weight:600">${children}</h${level}>`;
+    }
+    case 'bulletList': return `<ul style="margin:2px 0;padding-left:16px;list-style:disc">${children}</ul>`;
+    case 'orderedList': return `<ol style="margin:2px 0;padding-left:16px;list-style:decimal">${children}</ol>`;
+    case 'listItem': return `<li style="margin:1px 0">${children}</li>`;
+    case 'blockquote': return `<blockquote style="border-left:3px solid #ccc;padding-left:8px;margin:4px 0">${children}</blockquote>`;
+    case 'horizontalRule': return '<hr style="margin:4px 0">';
+    default: return children;
+  }
+}
+
+export function generateDescriptionHtml(description?: string): string {
+  if (!description) return '';
+  const trimmed = description.trim();
+  if (trimmed.startsWith('{')) {
+    try {
+      let parsed = JSON.parse(trimmed);
+      // Handle double-stringified JSON
+      if (typeof parsed === 'string') parsed = JSON.parse(parsed);
+      return renderDescriptionNode(parsed);
+    } catch (e) {
+      // Not valid JSON, fall through
+    }
+  }
+  // Plain text / HTML fallback — escape and wrap in paragraph
+  const escaped = trimmed.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return `<p style="margin:2px 0">${escaped.replace(/\n/g, '<br>')}</p>`;
+}
+
+
 export async function generateBillPDF(bill: any, settings: any, mode: 'download' | 'print' = 'download') {
   const brandName = settings?.brandName || "Inflation Engineering";
   const brandEmail = settings?.contact?.email || "";
@@ -67,18 +131,20 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
 
   if (typeof window !== 'undefined') {
     const rootStyle = getComputedStyle(document.documentElement);
-    const getHsl = (varName: string, fallback: string) => {
+    const getColor = (varName: string, fallback: string) => {
       const val = rootStyle.getPropertyValue(varName).trim();
       if (!val) return fallback;
-      if (val.startsWith('#') || val.startsWith('rgb') || val.startsWith('hsl')) return val;
+      if (val.startsWith('#') || val.startsWith('rgb') || val.startsWith('hsl') || val.startsWith('oklch') || val.includes('(')) {
+        return val;
+      }
       return `hsl(${val})`;
     };
-    primary = getHsl('--primary', primary);
-    primaryForeground = getHsl('--primary-foreground', primaryForeground);
-    border = getHsl('--border', border);
-    mutedForeground = getHsl('--muted-foreground', mutedForeground);
-    foreground = getHsl('--foreground', foreground);
-    background = getHsl('--background', background);
+    primary = getColor('--primary', primary);
+    primaryForeground = getColor('--primary-foreground', primaryForeground);
+    border = getColor('--border', border);
+    mutedForeground = getColor('--muted-foreground', mutedForeground);
+    foreground = getColor('--foreground', foreground);
+    background = getColor('--background', background);
   }
 
   const getAbsoluteUrl = (url: string) => {
@@ -261,13 +327,18 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
             background-color: var(--primary);
             color: var(--primary-foreground);
             text-align: left;
-            padding: 7px 10px;
-            font-size: 12px;
+            padding: 8px 10px;
+            font-size: 11px;
+            font-weight: 700;
             text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-top: 1px solid #cbd5e1;
+            border-bottom: 2px solid #94a3b8;
           }
           td {
-            padding: 5px 10px;
-            border-bottom: 1px solid var(--border);
+            padding: 8px 10px;
+            border-bottom: 1px solid #e2e8f0;
+            vertical-align: top;
           }
           .text-right {
             text-align: right;
@@ -381,7 +452,7 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
             <thead>
               <tr>
                 <th style="width: 50px;">#</th>
-                <th>Description</th>
+                <th>Title/Description</th>
                 <th class="text-center" style="width: 80px;">Qty</th>
                 ${docType !== 'chalan' ? `
                   <th class="text-right" style="width: 120px;">Rate</th>
@@ -393,7 +464,10 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
               ${items.map((item: any, index: number) => `
                 <tr>
                   <td>${index + 1}</td>
-                  <td><strong>${item.name || ""}</strong></td>
+                  <td>
+                    <strong>${item.name || ""}</strong>
+                    ${(() => { const html = generateDescriptionHtml(item.description); return html ? `<div style="color:var(--muted-foreground);font-size:11px;margin-top:3px;line-height:1.4;">${html}</div>` : ''; })()}
+                  </td>
                   <td class="text-center">${item.quantity || 1}</td>
                   ${docType !== 'chalan' ? `
                     <td class="text-right">৳${Math.round(item.price || 0)}</td>
@@ -401,6 +475,8 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
                   ` : ''}
                 </tr>
               `).join('')}
+
+
             </tbody>
           </table>
 

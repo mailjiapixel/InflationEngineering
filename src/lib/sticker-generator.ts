@@ -64,19 +64,21 @@ export async function printStickerInvoice(orderOrOrders: any | any[], settings: 
 
   if (typeof window !== 'undefined') {
     const rootStyle = getComputedStyle(document.documentElement);
-    const getHsl = (varName: string, fallback: string) => {
+    const getColor = (varName: string, fallback: string) => {
       const val = rootStyle.getPropertyValue(varName).trim();
       if (!val) return fallback;
-      if (val.startsWith('#') || val.startsWith('rgb') || val.startsWith('hsl')) return val;
+      if (val.startsWith('#') || val.startsWith('rgb') || val.startsWith('hsl') || val.startsWith('oklch') || val.includes('(')) {
+        return val;
+      }
       return `hsl(${val})`;
     };
-    primary = getHsl('--primary', primary);
-    primaryForeground = getHsl('--primary-foreground', primaryForeground);
-    border = getHsl('--border', border);
-    mutedForeground = getHsl('--muted-foreground', mutedForeground);
-    foreground = getHsl('--foreground', foreground);
-    background = getHsl('--background', background);
-    destructive = getHsl('--destructive', destructive);
+    primary = getColor('--primary', primary);
+    primaryForeground = getColor('--primary-foreground', primaryForeground);
+    border = getColor('--border', border);
+    mutedForeground = getColor('--muted-foreground', mutedForeground);
+    foreground = getColor('--foreground', foreground);
+    background = getColor('--background', background);
+    destructive = getColor('--destructive', destructive);
   }
 
   const stickersHtml = orders.map((order, index) => {

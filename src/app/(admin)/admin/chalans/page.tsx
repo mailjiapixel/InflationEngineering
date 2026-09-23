@@ -39,7 +39,7 @@ import {
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
-import { generateBillPDF } from '@/lib/bill-invoice-generator';
+import { generateBillPDF, generateDescriptionHtml } from '@/lib/bill-invoice-generator';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,9 +50,35 @@ import { Pagination } from '@/components/ui/pagination';
 
 interface BillItemInput {
   name: string;
+  description?: string;
   quantity: number;
   price: number;
 }
+
+const extractTextFromDescription = (description?: string): string => {
+  if (!description) return '';
+  const trimmed = description.trim();
+  // Try to parse as TipTap JSON directly
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      const getText = (node: any, isBlock?: boolean): string => {
+        if (node.text) return node.text;
+        if (node.content && Array.isArray(node.content)) {
+          const inner = node.content.map((n: any) => getText(n)).join('');
+          if (node.type === 'paragraph' || node.type === 'heading') return inner + '\n';
+          return inner;
+        }
+        return '';
+      };
+      return getText(parsed).trim();
+    } catch (e) {
+      // Not valid JSON, fall through
+    }
+  }
+  // Strip any HTML tags and return
+  return trimmed.replace(/<[^>]*>?/gm, '').trim();
+};
 
 function ClientChalansContent() {
   const router = useRouter();
@@ -101,7 +127,7 @@ function ClientChalansContent() {
   const [clientEmail, setClientEmail] = useState('');
   const [clientAddress, setClientAddress] = useState('');
   const [billItems, setBillItems] = useState<BillItemInput[]>([
-    { name: '', quantity: 1, price: 0 }
+    { name: '', description: '', quantity: 1, price: 0 }
   ]);
 
   // Auto suggestion states
@@ -268,12 +294,12 @@ function ClientChalansContent() {
       if (!prod) return;
 
       if (variantId === null) {
-        newItems.push({ name: prod.name, price: prod.salePrice || prod.price || 0, quantity: 1 });
+        newItems.push({ name: prod.name, description: extractTextFromDescription(prod.description), price: prod.salePrice || prod.price || 0, quantity: 1 });
       } else {
         const variant = (prod.variants || []).find((v: any) => v._id === variantId);
         if (!variant) return;
         const label = [prod.name, variant.color, variant.size].filter(Boolean).join(' — ');
-        newItems.push({ name: label, price: variant.salePrice || variant.price || 0, quantity: 1 });
+        newItems.push({ name: label, description: extractTextFromDescription(prod.description), price: variant.salePrice || variant.price || 0, quantity: 1 });
       }
     });
 
@@ -290,12 +316,12 @@ function ClientChalansContent() {
   };
 
   const handleAddItemRow = () => {
-    setBillItems([...billItems, { name: '', quantity: 1, price: 0 }]);
+    setBillItems([...billItems, { name: '', description: '', quantity: 1, price: 0 }]);
   };
 
   const handleRemoveItemRow = (index: number) => {
     if (billItems.length === 1) {
-      setBillItems([{ name: '', quantity: 1, price: 0 }]);
+      setBillItems([{ name: '', description: '', quantity: 1, price: 0 }]);
     } else {
       setBillItems(billItems.filter((_, i) => i !== index));
     }
@@ -307,6 +333,8 @@ function ClientChalansContent() {
       updated[index].quantity = Math.max(1, parseInt(value) || 1);
     } else if (field === 'price') {
       updated[index].price = Math.max(0, parseFloat(value) || 0);
+    } else if (field === 'description') {
+      updated[index].description = value;
     } else {
       updated[index].name = value;
     }
@@ -388,7 +416,7 @@ function ClientChalansContent() {
     setClientEmail('');
     setPhoneError('');
     setClientAddress('');
-    setBillItems([{ name: '', quantity: 1, price: 0 }]);
+    setBillItems([{ name: '', description: '', quantity: 1, price: 0 }]);
     setSelectedProductVariants({});
     setProductSearchTerm('');
     setProductPickerOpen(false);
@@ -496,7 +524,7 @@ function ClientChalansContent() {
   );
 
   return (
-    <div className="flex-1 space-y-6 px-0 py-4 md:p-8">
+    <div className="flex-1 space-y-6 px-4 py-4">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Delivery Challans</h2>
@@ -509,7 +537,7 @@ function ClientChalansContent() {
 
       {/* Challans Table */}
       <Card>
-        <CardHeader>
+        <CardHeader className="px-4 py-5">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <CardTitle>Challans List</CardTitle>
             <div className="relative w-full md:w-72">
@@ -523,7 +551,7 @@ function ClientChalansContent() {
             </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-4">
           {loading ? (
             <div className="flex h-32 items-center justify-center">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -538,20 +566,22 @@ function ClientChalansContent() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Challan No</TableHead>
-                    <TableHead>Client Name</TableHead>
-                    <TableHead>Phone</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead className="w-[140px]">Challan No</TableHead>
+                    <TableHead className="w-[220px] max-w-[240px]">Client Name</TableHead>
+                    <TableHead className="w-[140px]">Phone</TableHead>
+                    <TableHead className="w-[120px]">Date</TableHead>
+                    <TableHead className="text-right w-[90px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {paginatedChalans.map((chalan) => (
                     <TableRow key={chalan._id}>
-                      <TableCell className="font-semibold">{chalan.invoiceNo}</TableCell>
-                      <TableCell>{chalan.clientName}</TableCell>
-                      <TableCell>{chalan.clientPhone}</TableCell>
-                      <TableCell>{format(new Date(chalan.date), 'dd MMM yyyy')}</TableCell>
+                      <TableCell className="font-semibold whitespace-nowrap">{chalan.invoiceNo}</TableCell>
+                      <TableCell className="max-w-[240px] whitespace-normal break-words leading-snug">
+                        {chalan.clientName}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">{chalan.clientPhone}</TableCell>
+                      <TableCell className="whitespace-nowrap">{format(new Date(chalan.date), 'dd MMM yyyy')}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <Button
@@ -773,12 +803,18 @@ function ClientChalansContent() {
             <div className="space-y-3">
               {billItems.map((item, index) => (
                 <div key={index} className="flex items-center gap-3">
-                  <div className="flex-1">
+                  <div className="flex-1 space-y-1">
                     <Input
-                      placeholder="Item name / Description"
+                      placeholder="Title"
                       value={item.name}
                       onChange={(e) => handleItemChange(index, 'name', e.target.value)}
                       required
+                    />
+                    <Input
+                      placeholder="Description (Optional)"
+                      value={item.description || ''}
+                      onChange={(e) => handleItemChange(index, 'description', e.target.value)}
+                      className="text-xs h-8 text-muted-foreground"
                     />
                   </div>
                   <div className="w-32">
@@ -924,19 +960,27 @@ function ClientChalansContent() {
                 </div>
               </div>
 
-              <div className="border rounded-md overflow-hidden">
-                <Table>
+              <div className="border rounded-md overflow-x-auto">
+                <Table className="w-full">
                   <TableHeader>
                     <TableRow className="bg-muted hover:bg-muted">
-                      <TableHead>Description</TableHead>
-                      <TableHead className="text-center w-24">Quantity Delivered</TableHead>
+                      <TableHead className="min-w-[200px]">Title/Description</TableHead>
+                      <TableHead className="text-center w-24 whitespace-nowrap">Quantity Delivered</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {selectedChalan.items.map((item: any, i: number) => (
                       <TableRow key={i}>
-                        <TableCell className="font-medium">{item.name}</TableCell>
-                        <TableCell className="text-center font-medium">{item.quantity}</TableCell>
+                        <TableCell className="max-w-md whitespace-normal break-words">
+                          <div className="font-medium leading-snug">{item.name}</div>
+                          {item.description && (
+                            <div 
+                              className="text-xs text-muted-foreground mt-1 break-words leading-relaxed [&_p]:my-0.5 [&_ul]:pl-4 [&_ul]:list-disc [&_ol]:pl-4 [&_ol]:list-decimal"
+                              dangerouslySetInnerHTML={{ __html: generateDescriptionHtml(item.description) }}
+                            />
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center font-medium whitespace-nowrap">{item.quantity}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

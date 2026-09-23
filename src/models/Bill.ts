@@ -3,6 +3,7 @@ import mongoose, { Document, Model, Schema } from 'mongoose';
 
 export interface IBillItem {
   name: string;
+  description?: string;
   quantity: number;
   price: number;
 }
@@ -48,6 +49,7 @@ const BillSchema: Schema<IBill> = new Schema(
     items: [
       {
         name: { type: String, required: true },
+        description: { type: String },
         quantity: { type: Number, required: true, min: 1 },
         price: { type: Number, required: true, min: 0 },
       },

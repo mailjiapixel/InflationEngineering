@@ -31,8 +31,6 @@ import {
   CreditCard,
   FileText,
   Package,
-  ChevronDown,
-  X,
   Eye,
   MapPin,
   Phone,
@@ -46,7 +44,7 @@ import {
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
-import { generateBillPDF } from '@/lib/bill-invoice-generator';
+import { generateBillPDF, generateDescriptionHtml } from '@/lib/bill-invoice-generator';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -57,9 +55,35 @@ import { Pagination } from '@/components/ui/pagination';
 
 interface BillItemInput {
   name: string;
+  description?: string;
   quantity: number;
   price: number;
 }
+
+const extractTextFromDescription = (description?: string): string => {
+  if (!description) return '';
+  const trimmed = description.trim();
+  // Try to parse as TipTap JSON directly
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      const getText = (node: any, isBlock?: boolean): string => {
+        if (node.text) return node.text;
+        if (node.content && Array.isArray(node.content)) {
+          const inner = node.content.map((n: any) => getText(n)).join('');
+          if (node.type === 'paragraph' || node.type === 'heading') return inner + '\n';
+          return inner;
+        }
+        return '';
+      };
+      return getText(parsed).trim();
+    } catch (e) {
+      // Not valid JSON, fall through
+    }
+  }
+  // Strip any HTML tags and return
+  return trimmed.replace(/<[^>]*>?/gm, '').trim();
+};
 
 function ClientBillsContent() {
   const router = useRouter();
@@ -123,7 +147,7 @@ function ClientBillsContent() {
   const [clientEmail, setClientEmail] = useState('');
   const [clientAddress, setClientAddress] = useState('');
   const [billItems, setBillItems] = useState<BillItemInput[]>([
-    { name: '', quantity: 1, price: 0 }
+    { name: '', description: '', quantity: 1, price: 0 }
   ]);
   const [deliveryCharge, setDeliveryCharge] = useState<number>(0);
   const [serviceFee, setServiceFee] = useState<number>(0);
@@ -312,13 +336,13 @@ function ClientBillsContent() {
 
       if (variantId === null) {
         // Base product (no variant chosen)
-        newItems.push({ name: prod.name, price: prod.salePrice || prod.price || 0, quantity: 1 });
+        newItems.push({ name: prod.name, description: extractTextFromDescription(prod.description), price: prod.salePrice || prod.price || 0, quantity: 1 });
       } else {
         // Specific variant
         const variant = (prod.variants || []).find((v: any) => v._id === variantId);
         if (!variant) return;
         const label = [prod.name, variant.color, variant.size].filter(Boolean).join(' — ');
-        newItems.push({ name: label, price: variant.salePrice || variant.price || 0, quantity: 1 });
+        newItems.push({ name: label, description: extractTextFromDescription(prod.description), price: variant.salePrice || variant.price || 0, quantity: 1 });
       }
     });
 
@@ -335,12 +359,12 @@ function ClientBillsContent() {
   };
 
   const handleAddItemRow = () => {
-    setBillItems([...billItems, { name: '', quantity: 1, price: 0 }]);
+    setBillItems([...billItems, { name: '', description: '', quantity: 1, price: 0 }]);
   };
 
   const handleRemoveItemRow = (index: number) => {
     if (billItems.length === 1) {
-      setBillItems([{ name: '', quantity: 1, price: 0 }]);
+      setBillItems([{ name: '', description: '', quantity: 1, price: 0 }]);
     } else {
       setBillItems(billItems.filter((_, i) => i !== index));
     }
@@ -352,6 +376,8 @@ function ClientBillsContent() {
       updated[index].quantity = Math.max(1, parseInt(value) || 1);
     } else if (field === 'price') {
       updated[index].price = Math.max(0, parseFloat(value) || 0);
+    } else if (field === 'description') {
+      updated[index].description = value;
     } else {
       updated[index].name = value;
     }
@@ -438,7 +464,7 @@ function ClientBillsContent() {
     setClientEmail('');
     setPhoneError('');
     setClientAddress('');
-    setBillItems([{ name: '', quantity: 1, price: 0 }]);
+    setBillItems([{ name: '', description: '', quantity: 1, price: 0 }]);
     setDeliveryCharge(0);
     setServiceFee(0);
     setDiscountType('fixed');
@@ -556,7 +582,7 @@ function ClientBillsContent() {
   const accountsReceivable = bills.reduce((sum, b) => sum + (b.currentBillDue || 0), 0);
 
   return (
-    <div className="flex-1 space-y-6 px-0 py-4 md:p-8">
+    <div className="flex-1 space-y-6 px-4 py-4">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Client Billing Manager</h2>
@@ -660,9 +686,9 @@ function ClientBillsContent() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Bill No</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Client Details</TableHead>
+              <TableHead className="w-[120px]">Bill No</TableHead>
+              <TableHead className="w-[110px]">Date</TableHead>
+              <TableHead className="w-[200px] max-w-[220px]">Client Details</TableHead>
               <TableHead className="text-right">Grand Total</TableHead>
               <TableHead className="text-right">Paid (Cash-in)</TableHead>
               <TableHead className="text-right">Due</TableHead>
@@ -687,7 +713,7 @@ function ClientBillsContent() {
             ) : (
               paginatedBills.map((bill) => (
                 <TableRow key={bill._id}>
-                  <TableCell>
+                  <TableCell className="whitespace-nowrap">
                     <button
                       onClick={() => setSelectedBill(bill)}
                       className="font-bold text-primary hover:underline underline-offset-2 flex items-center gap-1 group transition-colors"
@@ -698,9 +724,9 @@ function ClientBillsContent() {
                       <Eye className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </button>
                   </TableCell>
-                  <TableCell>{format(new Date(bill.date), 'dd MMM yyyy')}</TableCell>
-                  <TableCell>
-                    <div className="font-medium">{bill.clientName}</div>
+                  <TableCell className="whitespace-nowrap">{format(new Date(bill.date), 'dd MMM yyyy')}</TableCell>
+                  <TableCell className="max-w-[220px] whitespace-normal break-words">
+                    <div className="font-medium leading-snug">{bill.clientName}</div>
                     <div className="text-xs text-muted-foreground">{bill.clientPhone}</div>
                   </TableCell>
                   <TableCell className="text-right font-semibold">৳{bill.gTotal}</TableCell>
@@ -953,13 +979,20 @@ function ClientBillsContent() {
               <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1">
                 {billItems.map((item, index) => (
                   <div key={index} className="flex gap-2 items-center">
-                    <Input
-                      placeholder="Item Description"
-                      value={item.name}
-                      onChange={(e) => handleItemChange(index, 'name', e.target.value)}
-                      className="flex-1"
-                      required
-                    />
+                    <div className="flex-1 space-y-1">
+                      <Input
+                        placeholder="Title"
+                        value={item.name}
+                        onChange={(e) => handleItemChange(index, 'name', e.target.value)}
+                        required
+                      />
+                      <Input
+                        placeholder="Description (Optional)"
+                        value={item.description || ''}
+                        onChange={(e) => handleItemChange(index, 'description', e.target.value)}
+                        className="text-xs h-8 text-muted-foreground"
+                      />
+                    </div>
                     <Input
                       type="number"
                       placeholder="Qty"
@@ -1303,7 +1336,7 @@ function ClientBillsContent() {
                     <thead>
                       <tr className="bg-muted/60 border-b">
                         <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">#</th>
-                        <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">Product / Description</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">Title/Description</th>
                         <th className="text-center px-4 py-2.5 font-semibold text-muted-foreground">Qty</th>
                         <th className="text-right px-4 py-2.5 font-semibold text-muted-foreground">Rate (৳)</th>
                         <th className="text-right px-4 py-2.5 font-semibold text-muted-foreground">Amount (৳)</th>
@@ -1313,7 +1346,15 @@ function ClientBillsContent() {
                       {(selectedBill.items || []).map((item: any, idx: number) => (
                         <tr key={idx} className={idx % 2 === 0 ? 'bg-background' : 'bg-muted/20'}>
                           <td className="px-4 py-2.5 text-muted-foreground">{idx + 1}</td>
-                          <td className="px-4 py-2.5 font-medium">{item.name}</td>
+                          <td className="px-4 py-2.5 max-w-md whitespace-normal break-words">
+                            <div className="font-medium leading-snug">{item.name}</div>
+                            {item.description && (
+                              <div 
+                                className="text-xs text-muted-foreground mt-1 break-words leading-relaxed [&_p]:my-0.5 [&_ul]:pl-4 [&_ul]:list-disc [&_ol]:pl-4 [&_ol]:list-decimal"
+                                dangerouslySetInnerHTML={{ __html: generateDescriptionHtml(item.description) }}
+                              />
+                            )}
+                          </td>
                           <td className="px-4 py-2.5 text-center">{item.quantity}</td>
                           <td className="px-4 py-2.5 text-right">{Math.round(item.price).toLocaleString()}</td>
                           <td className="px-4 py-2.5 text-right font-semibold">{Math.round(item.price * item.quantity).toLocaleString()}</td>

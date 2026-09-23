@@ -7,7 +7,6 @@ import {
   Heart,
   Minus,
   Plus,
-  Star,
   MoreVertical,
   Edit,
   Trash2,
@@ -113,7 +112,7 @@ export default function ProductDetailsClient({ product }: ProductDetailsClientPr
       const variantImgs = Array.from(
         new Set((product.variants || []).map((v: any) => v.image).filter(Boolean))
       ) as string[];
-      
+
       if (activeVariant?.image) {
         const idx = variantImgs.indexOf(activeVariant.image);
         if (idx > -1) {
@@ -124,7 +123,7 @@ export default function ProductDetailsClient({ product }: ProductDetailsClientPr
       return variantImgs.length > 0 ? variantImgs : (product.images || []);
     }
     return product.images || [];
-  }, [product.images, product.variants, activeVariant?.image]);
+  }, [product.images, product.variants, activeVariant]);
 
 
   // Auto-select first available options on mount or product change
@@ -631,10 +630,10 @@ export default function ProductDetailsClient({ product }: ProductDetailsClientPr
                         disabled={isOutOfStock}
                         onClick={() => setSelectedColor(color)}
                         className={`px-4 py-2 text-xs font-bold transition-all border ${selectedColor === color
-                            ? 'bg-primary/5 border-primary text-primary shadow-sm'
-                            : isOutOfStock
-                              ? 'bg-muted/30 border-dashed text-muted-foreground/50 cursor-not-allowed'
-                              : 'border-muted-foreground/20 text-muted-foreground hover:border-primary/50'
+                          ? 'bg-primary/5 border-primary text-primary shadow-sm'
+                          : isOutOfStock
+                            ? 'bg-muted/30 border-dashed text-muted-foreground/50 cursor-not-allowed'
+                            : 'border-muted-foreground/20 text-muted-foreground hover:border-primary/50'
                           }`}
                       >
                         {color}

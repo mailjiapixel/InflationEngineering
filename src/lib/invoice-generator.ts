@@ -19,18 +19,20 @@ export async function generateInvoicePDF(orderOrOrders: any | any[], settings: a
 
   if (typeof window !== 'undefined') {
     const rootStyle = getComputedStyle(document.documentElement);
-    const getHsl = (varName: string, fallback: string) => {
+    const getColor = (varName: string, fallback: string) => {
       const val = rootStyle.getPropertyValue(varName).trim();
       if (!val) return fallback;
-      if (val.startsWith('#') || val.startsWith('rgb') || val.startsWith('hsl')) return val;
+      if (val.startsWith('#') || val.startsWith('rgb') || val.startsWith('hsl') || val.startsWith('oklch') || val.includes('(')) {
+        return val;
+      }
       return `hsl(${val})`;
     };
-    primary = getHsl('--primary', primary);
-    primaryForeground = getHsl('--primary-foreground', primaryForeground);
-    border = getHsl('--border', border);
-    mutedForeground = getHsl('--muted-foreground', mutedForeground);
-    foreground = getHsl('--foreground', foreground);
-    background = getHsl('--background', background);
+    primary = getColor('--primary', primary);
+    primaryForeground = getColor('--primary-foreground', primaryForeground);
+    border = getColor('--border', border);
+    mutedForeground = getColor('--muted-foreground', mutedForeground);
+    foreground = getColor('--foreground', foreground);
+    background = getColor('--background', background);
   }
 
   const invoicesHtml = orders.map((order, index) => {
@@ -258,13 +260,18 @@ export async function generateInvoicePDF(orderOrOrders: any | any[], settings: a
             background-color: var(--primary);
             color: var(--primary-foreground);
             text-align: left;
-            padding: 10px;
-            font-size: 12px;
+            padding: 8px 10px;
+            font-size: 11px;
+            font-weight: 700;
             text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-top: 1px solid #cbd5e1;
+            border-bottom: 2px solid #94a3b8;
           }
           td {
-            padding: 12px 10px;
-            border-bottom: 1px solid var(--border);
+            padding: 8px 10px;
+            border-bottom: 1px solid #e2e8f0;
+            vertical-align: top;
           }
           .text-right {
             text-align: right;

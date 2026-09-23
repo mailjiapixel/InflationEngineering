@@ -1,14 +1,10 @@
 "use client";
 
 import { useSession, signOut } from 'next-auth/react';
-import { 
-  User, 
-  LayoutDashboard, 
-  LogOut, 
-  Settings,
-  Store
+import {
+  User,
+  LogOut,
 } from 'lucide-react';
-import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { ModeToggle } from '@/components/mode-toggle';
 import { SidebarTrigger } from '@/components/ui/sidebar';
@@ -26,7 +22,7 @@ export default function AdminTopbar() {
   const { data: session } = useSession();
 
   return (
-    <header className="flex h-14 items-center gap-4 border-b bg-muted/40 px-4 lg:h-[60px] lg:px-6 justify-between sticky top-0 z-30">
+    <header className="flex h-14 items-center gap-4 border-b bg-muted/40 px-4 lg:h-[60px] lg:px-4 justify-between sticky top-0 z-30">
       <div className="flex items-center gap-4">
         <SidebarTrigger className="md:hidden" />
         <div className="flex-1 font-semibold text-lg md:hidden">
@@ -36,15 +32,15 @@ export default function AdminTopbar() {
       <div className="hidden md:flex flex-1" />
       <div className="flex items-center gap-4">
         <ModeToggle />
-        
+
         {session?.user ? (
           <DropdownMenu>
             <DropdownMenuTrigger nativeButton={true} render={
               <Button variant="secondary" size="icon" className="rounded-full overflow-hidden border border-primary/20">
                 {session.user.image ? (
-                  <img 
-                    src={session.user.image} 
-                    alt={session.user.name || "Admin"} 
+                  <img
+                    src={session.user.image}
+                    alt={session.user.name || "Admin"}
                     className="h-full w-full object-cover"
                     referrerPolicy="no-referrer"
                   />
@@ -66,7 +62,7 @@ export default function AdminTopbar() {
                 </DropdownMenuLabel>
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 variant="destructive"
                 onClick={() => signOut({ callbackUrl: window.location.origin })}
               >

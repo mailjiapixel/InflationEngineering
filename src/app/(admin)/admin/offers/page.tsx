@@ -556,7 +556,7 @@ function ClientOffersContent() {
   );
 
   return (
-    <div className="flex-1 space-y-6 px-4 py-4">
+    <div className="flex-1 space-y-6 px-[2px] md:px-4 py-4">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Client Quotations / Offers</h2>
@@ -603,11 +603,11 @@ function ClientOffersContent() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[140px]">Quotation No</TableHead>
-                    <TableHead className="w-[220px] max-w-[240px]">Client Name</TableHead>
-                    <TableHead className="w-[140px]">Phone</TableHead>
-                    <TableHead className="w-[120px]">Date</TableHead>
-                    <TableHead className="text-right">Total Offer (৳)</TableHead>
+                    <TableHead className="w-[130px]">Quotation No</TableHead>
+                    <TableHead className="min-w-[280px]">Client Name</TableHead>
+                    <TableHead className="w-[130px]">Phone</TableHead>
+                    <TableHead className="w-[110px]">Date</TableHead>
+                    <TableHead className="text-right w-[140px]">Total Offer (৳)</TableHead>
                     <TableHead className="text-right w-[90px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -615,13 +615,13 @@ function ClientOffersContent() {
                   {paginatedOffers.map((offer) => (
                     <TableRow key={offer._id}>
                       <TableCell className="font-semibold whitespace-nowrap">{offer.invoiceNo}</TableCell>
-                      <TableCell className="max-w-[240px] whitespace-normal break-words leading-snug">
+                      <TableCell className="whitespace-normal break-words leading-snug">
                         {offer.clientName}
                       </TableCell>
                       <TableCell className="whitespace-nowrap">{offer.clientPhone}</TableCell>
-                      <TableCell className="whitespace-nowrap">{format(new Date(offer.date), 'dd MMM yyyy')}</TableCell>
-                      <TableCell className="text-right font-medium whitespace-nowrap">৳{Math.round(offer.total)}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="whitespace-nowrap w-[110px]">{format(new Date(offer.date), 'dd MMM yyyy')}</TableCell>
+                      <TableCell className="text-right font-medium whitespace-nowrap w-[140px]">৳{Math.round(offer.total)}</TableCell>
+                      <TableCell className="text-right w-[90px]">
                         <div className="flex items-center justify-end gap-1.5">
                           <Button
                             variant="ghost"

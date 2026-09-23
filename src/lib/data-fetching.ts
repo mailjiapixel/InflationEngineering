@@ -149,10 +149,48 @@ export const getCachedCategories = () => {
         .populate('parentCategory', 'name')
         .sort({ createdAt: -1 })
         .lean();
-      return serialize(categories);
+
+      // Fallback: If a category does not have an image, use the 1st image of the 1st product in that category (or its subcategories)
+      const categoriesWithFallback = await Promise.all(
+        categories.map(async (cat: any) => {
+          let image = cat.image;
+          if (!image || typeof image !== 'string' || image.trim() === '') {
+            const subCats = categories.filter((c: any) => {
+              if (!c.parentCategory) return false;
+              const parentId = typeof c.parentCategory === 'object' ? c.parentCategory._id : c.parentCategory;
+              return String(parentId) === String(cat._id);
+            });
+            const targetCatIds = [cat._id, ...subCats.map((s: any) => s._id)];
+
+            let firstProduct = await Product.findOne({
+              categories: { $in: targetCatIds },
+              isPublished: true,
+              'images.0': { $exists: true }
+            }).select('images').lean();
+
+            if (!firstProduct || !firstProduct.images?.[0]) {
+              firstProduct = await Product.findOne({
+                categories: { $in: targetCatIds },
+                'images.0': { $exists: true }
+              }).select('images').lean();
+            }
+
+            if (firstProduct?.images?.[0]) {
+              image = firstProduct.images[0];
+            }
+          }
+
+          return {
+            ...cat,
+            image: image || ''
+          };
+        })
+      );
+
+      return serialize(categoriesWithFallback);
     },
-    ['categories-list'],
-    { revalidate: 31536000, tags: [CACHE_TAGS.categories] }
+    ['categories-list-v2'],
+    { revalidate: 31536000, tags: [CACHE_TAGS.categories, CACHE_TAGS.products] }
   )();
 };
 

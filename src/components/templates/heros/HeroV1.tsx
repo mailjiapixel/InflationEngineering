@@ -75,10 +75,10 @@ export default function HeroV1({ banners }: HeroSliderProps) {
     return (
       <div className="relative w-full h-[350px] sm:h-[450px] md:h-[550px] lg:h-[650px] flex items-center justify-center overflow-hidden bg-gradient-to-br from-slate-900 to-slate-800">
         <div className="text-center px-6 max-w-2xl relative z-10">
-          <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold text-white mb-4 leading-tight">
+          <h1 className="text-xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold text-white mb-3 leading-tight">
             Quality Products,<br />Unbeatable Prices
           </h1>
-          <p className="text-xs sm:text-base md:text-lg text-slate-300 mb-8">
+          <p className="text-xs sm:text-sm md:text-base text-slate-300 mb-6">
             Discover groceries, electronics, and fashion tailored for your needs.
           </p>
           <div className="flex flex-wrap justify-center gap-3 md:gap-4">
@@ -145,7 +145,7 @@ export default function HeroV1({ banners }: HeroSliderProps) {
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ duration: 0.7, delay: 0.3, ease: "easeOut" }}
-                            className="text-base sm:text-4xl md:text-5xl lg:text-7xl font-black text-white leading-[1.1] tracking-tight mb-1 sm:mb-6 drop-shadow-2xl"
+                            className="text-xl sm:text-3xl md:text-5xl lg:text-6xl font-black text-white leading-[1.1] tracking-tight mb-2 sm:mb-5 drop-shadow-2xl"
                           >
                             {banner.title}
                           </motion.h1>
@@ -155,7 +155,7 @@ export default function HeroV1({ banners }: HeroSliderProps) {
                               initial={{ opacity: 0, y: 5 }}
                               animate={{ opacity: 1, y: 0 }}
                               transition={{ duration: 0.7, delay: 0.45, ease: "easeOut" }}
-                              className="text-[9px] sm:text-sm md:text-lg lg:text-xl text-white/80 max-w-[180px] sm:max-w-md md:max-w-lg mb-3 sm:mb-10 leading-snug drop-shadow-sm"
+                              className="text-xs sm:text-sm md:text-base lg:text-lg text-white/85 max-w-[240px] sm:max-w-md md:max-w-lg mb-3 sm:mb-8 leading-snug drop-shadow-sm"
                             >
                               {banner.subtitle}
                             </motion.p>
@@ -165,20 +165,20 @@ export default function HeroV1({ banners }: HeroSliderProps) {
                             initial={{ opacity: 0, y: 5 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ duration: 0.7, delay: 0.6, ease: "easeOut" }}
-                            className="flex flex-wrap items-center gap-1.5 sm:gap-5"
+                            className="flex flex-wrap items-center gap-2 sm:gap-4"
                           >
                             <Link
                               href={primaryHref}
-                              className="flex items-center gap-1 px-3 py-1 sm:px-10 sm:py-4 bg-primary text-white font-bold rounded-full hover:bg-primary/90 hover:scale-105 active:scale-95 transition-all text-[8px] sm:text-base shadow-2xl"
+                              className="flex items-center gap-1.5 px-4 py-2 sm:px-8 sm:py-3.5 bg-primary text-white font-bold rounded-full hover:bg-primary/90 hover:scale-105 active:scale-95 transition-all text-xs sm:text-base shadow-xl"
                             >
                               <span>{primaryText}</span>
-                              <ArrowRight className="w-2 h-2 sm:w-4 sm:h-4" />
+                              <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4" />
                             </Link>
 
                             {secondaryText && (
                               <Link
                                 href={secondaryHref}
-                                className="px-3 py-1 sm:px-10 sm:py-4 bg-white/10 backdrop-blur-md border border-white/20 text-white font-bold rounded-full hover:bg-white/20 hover:border-white/40 transition-all text-[8px] sm:text-base shadow-sm"
+                                className="px-4 py-2 sm:px-8 sm:py-3.5 bg-white/10 backdrop-blur-md border border-white/20 text-white font-bold rounded-full hover:bg-white/20 hover:border-white/40 transition-all text-xs sm:text-base shadow-sm"
                               >
                                 {secondaryText}
                               </Link>

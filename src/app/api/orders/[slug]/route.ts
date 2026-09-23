@@ -128,19 +128,18 @@ export async function PATCH(
       if (isOrderSuccessful && !order.isRewarded && order.user) {
         const user = await User.findOne({ _id: order.user }).session(dbSession);
         const settings = await GlobalSettings.findOne().session(dbSession);
-        const subConfig = {
-          activationThreshold: settings?.subscriptionConfig?.activationThreshold ?? 5000,
-          rewardPercentage: settings?.subscriptionConfig?.rewardPercentage ?? 5
-        };
+        const threshold = Number(settings?.subscriptionConfig?.activationThreshold ?? 0);
+        const percentage = Number(settings?.subscriptionConfig?.rewardPercentage ?? 0);
+        const isLoyaltyActive = settings?.subscriptionConfig?.enabled !== false && threshold > 0 && percentage > 0;
 
-        if (user) {
-          if (!user.isSubscriptionActive && order.totalAmount >= subConfig.activationThreshold) {
+        if (user && isLoyaltyActive) {
+          if (!user.isSubscriptionActive && order.totalAmount >= threshold) {
             user.isSubscriptionActive = true;
             await user.save({ session: dbSession });
           }
 
           const rewardAmount = order.earnedRewardAmount || 0;
-          if ((user.isSubscriptionActive || order.totalAmount >= subConfig.activationThreshold) && rewardAmount > 0) {
+          if ((user.isSubscriptionActive || order.totalAmount >= threshold) && rewardAmount > 0) {
             user.walletBalance = (user.walletBalance || 0) + rewardAmount;
             await user.save({ session: dbSession });
 

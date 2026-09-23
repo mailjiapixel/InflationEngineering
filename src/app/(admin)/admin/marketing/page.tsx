@@ -20,6 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2, Truck, CreditCard, Globe, X, BarChart3, Settings2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ImageUpload } from '@/components/ui/image-upload';
+import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -30,6 +31,7 @@ import {
 
 const marketingSettingsSchema = z.object({
   subscriptionConfig: z.object({
+    enabled: z.boolean().default(false),
     activationThreshold: z.number().min(0, 'Threshold cannot be negative'),
     rewardPercentage: z.number().min(0, 'Percentage cannot be negative').max(100, 'Cannot exceed 100%'),
   }).optional(),
@@ -99,8 +101,9 @@ export default function MarketingSettingsPage() {
     resolver: zodResolver(marketingSettingsSchema) as any,
     defaultValues: {
       subscriptionConfig: {
-        activationThreshold: 5000,
-        rewardPercentage: 5,
+        enabled: false,
+        activationThreshold: 0,
+        rewardPercentage: 0,
       },
       deliveryChargeInsideDhaka: 60,
       deliveryChargeOutsideDhaka: 120,
@@ -149,8 +152,9 @@ export default function MarketingSettingsPage() {
             if (!controller.signal.aborted) {
               const sanitizedData: MarketingSettingsFormValues = {
                 subscriptionConfig: {
-                  activationThreshold: result.data.subscriptionConfig?.activationThreshold ?? 5000,
-                  rewardPercentage: result.data.subscriptionConfig?.rewardPercentage ?? 5,
+                  enabled: result.data.subscriptionConfig?.enabled ?? ((result.data.subscriptionConfig?.activationThreshold ?? 0) > 0 && (result.data.subscriptionConfig?.rewardPercentage ?? 0) > 0),
+                  activationThreshold: result.data.subscriptionConfig?.activationThreshold ?? 0,
+                  rewardPercentage: result.data.subscriptionConfig?.rewardPercentage ?? 0,
                 },
                 deliveryChargeInsideDhaka: result.data.deliveryChargeInsideDhaka ?? 60,
                 deliveryChargeOutsideDhaka: result.data.deliveryChargeOutsideDhaka ?? 120,
@@ -291,56 +295,85 @@ export default function MarketingSettingsPage() {
                   <CardDescription>Configure how customers activate their lifetime rewards and the percentage they earn.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <FormField
-                      control={form.control}
-                      name="subscriptionConfig.activationThreshold"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Activation Threshold (TK)</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              placeholder="5000"
-                              {...field}
-                              onChange={(e) => field.onChange(Number(e.target.value))}
-                            />
-                          </FormControl>
-                          <FormDescription>Minimum single order amount to activate lifetime rewards for a user.</FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="subscriptionConfig.rewardPercentage"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Reward Percentage (%)</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              placeholder="5"
-                              {...field}
-                              onChange={(e) => field.onChange(Number(e.target.value))}
-                            />
-                          </FormControl>
-                          <FormDescription>Percentage of purchase total awarded as tokens to active users.</FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
+                  <FormField
+                    control={form.control}
+                    name="subscriptionConfig.enabled"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4 shadow-sm bg-muted/20">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-base font-semibold">Enable Loyalty & Rewards Program</FormLabel>
+                          <FormDescription>
+                            Toggle on to activate loyalty rewards and show the promotional banner on the storefront.
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
 
-                  <div className="rounded-lg border p-4 bg-primary/5">
-                    <h4 className="text-sm font-bold mb-2">How it works:</h4>
-                    <ul className="text-sm space-y-1 list-disc list-inside text-muted-foreground">
-                      <li>All registered users are enrolled in the loyalty program automatically.</li>
-                      <li>Users become <strong>Active</strong> after a single purchase ≥ {form.watch('subscriptionConfig.activationThreshold')} TK.</li>
-                      <li>Active users earn <strong>{form.watch('subscriptionConfig.rewardPercentage')}%</strong> of every purchase as wallet tokens.</li>
-                      <li>Tokens can be used for discounts on any future purchase.</li>
-                    </ul>
-                  </div>
+                  {form.watch('subscriptionConfig.enabled') ? (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <FormField
+                          control={form.control}
+                          name="subscriptionConfig.activationThreshold"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Activation Threshold (TK)</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  placeholder="5000"
+                                  {...field}
+                                  onChange={(e) => field.onChange(Number(e.target.value))}
+                                />
+                              </FormControl>
+                              <FormDescription>Minimum single order amount to activate lifetime rewards for a user.</FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="subscriptionConfig.rewardPercentage"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Reward Percentage (%)</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  placeholder="5"
+                                  {...field}
+                                  onChange={(e) => field.onChange(Number(e.target.value))}
+                                />
+                              </FormControl>
+                              <FormDescription>Percentage of purchase total awarded as tokens to active users.</FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      <div className="rounded-lg border p-4 bg-primary/5">
+                        <h4 className="text-sm font-bold mb-2">How it works:</h4>
+                        <ul className="text-sm space-y-1 list-disc list-inside text-muted-foreground">
+                          <li>All registered users are enrolled in the loyalty program automatically.</li>
+                          <li>Users become <strong>Active</strong> after a single purchase ≥ {form.watch('subscriptionConfig.activationThreshold') || 0} TK.</li>
+                          <li>Active users earn <strong>{form.watch('subscriptionConfig.rewardPercentage') || 0}%</strong> of every purchase as wallet tokens.</li>
+                          <li>Tokens can be used for discounts on any future purchase.</li>
+                        </ul>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground bg-muted/10">
+                      The Loyalty & Rewards program is currently disabled. The promotion banner is hidden on the storefront homepage and no rewards will be calculated.
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>

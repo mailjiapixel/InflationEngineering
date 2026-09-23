@@ -104,7 +104,7 @@ function BlogsContent() {
   );
 
   return (
-    <div className="space-y-6 pt-6">
+    <div className="space-y-6 pt-6 px-[2px] md:px-4">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-black flex items-center gap-2">

@@ -57,9 +57,10 @@ export const ProductCardSelector = ({ style, product, isFlashSale, priority }: {
 import CategoryV1 from './categories/CategoryV1';
 
 export const CategorySelector = ({ style, categories }: { style: string, categories: any[] }) => {
+  const mainCategories = (categories || []).filter((cat: any) => !cat.parentCategory);
   switch (style) {
-    case 'v1': return <CategoryV1 categories={categories} />;
-    default: return <CategoryV1 categories={categories} />;
+    case 'v1': return <CategoryV1 categories={mainCategories} />;
+    default: return <CategoryV1 categories={mainCategories} />;
   }
 };
 

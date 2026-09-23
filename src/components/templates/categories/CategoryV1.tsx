@@ -11,6 +11,7 @@ interface Category {
   name: string;
   slug: string;
   image?: string;
+  parentCategory?: any;
 }
 
 interface CategoryShowcaseProps {
@@ -44,6 +45,9 @@ function CategoryItem({ category }: { category: Category }) {
 }
 
 export default function CategoryV1({ categories }: CategoryShowcaseProps) {
+  // Only display main categories (exclude subcategories with parentCategory)
+  const mainCategories = (categories || []).filter((c: any) => !c.parentCategory);
+
   // ── Mobile carousel state ──────────────────────────────────────────
   const [mobileIndex, setMobileIndex] = useState(0);
   const [mobileSnaps, setMobileSnaps] = useState<number[]>([]);
@@ -94,9 +98,9 @@ export default function CategoryV1({ categories }: CategoryShowcaseProps) {
     };
   }, [desktopApi, onDesktopSelect]);
 
-  if (!categories || categories.length === 0) return null;
+  if (!mainCategories || mainCategories.length === 0) return null;
 
-  const manyCategories = categories.length > 6;
+  const manyCategories = mainCategories.length > 6;
 
   return (
     <section className="bg-muted/30 py-6 md:py-12 overflow-hidden">
@@ -111,7 +115,7 @@ export default function CategoryV1({ categories }: CategoryShowcaseProps) {
         <div className="md:hidden overflow-hidden">
           <div className="overflow-hidden cursor-grab active:cursor-grabbing" ref={mobileRef}>
             <div className="flex -ml-3">
-              {categories.map((category) => (
+              {mainCategories.map((category) => (
                 <div key={category._id} className="flex-[0_0_33.333%] min-w-0 pl-3 shrink-0">
                   <CategoryItem category={category} />
                 </div>
@@ -139,7 +143,7 @@ export default function CategoryV1({ categories }: CategoryShowcaseProps) {
         <div className="hidden md:block">
           {!manyCategories ? (
             <div className="flex flex-wrap justify-center gap-x-2 gap-y-0">
-              {categories.map((category) => (
+              {mainCategories.map((category) => (
                 <div key={category._id} className="w-[16%] lg:w-[13%]">
                   <CategoryItem category={category} />
                 </div>
@@ -149,7 +153,7 @@ export default function CategoryV1({ categories }: CategoryShowcaseProps) {
             <div className="relative">
               <div className="overflow-hidden cursor-grab active:cursor-grabbing" ref={desktopRef}>
                 <div className="flex -ml-4">
-                  {categories.map((category) => (
+                  {mainCategories.map((category) => (
                     <div
                       key={category._id}
                       className="flex-[0_0_25%] min-w-0 pl-4 lg:flex-[0_0_16.66%] xl:flex-[0_0_14.28%]"

@@ -50,6 +50,7 @@ export interface IGlobalSettings extends Document {
     };
   };
   subscriptionConfig?: {
+    enabled?: boolean;
     activationThreshold?: number;
     rewardPercentage?: number;
   };

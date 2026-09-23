@@ -492,8 +492,11 @@ export default function CheckoutPage() {
     (watchedFields.paymentMethod !== 'Manual' || (selectedMethod?.id && manualDetails.senderNumber && manualDetails.transactionId))
   );
 
-  const potentialReward = (profile?.isSubscriptionActive && settings?.subscriptionConfig)
-    ? Math.floor(finalTotal * (settings.subscriptionConfig.rewardPercentage / 100))
+  const isLoyaltyActive = settings?.subscriptionConfig?.enabled !== false &&
+    Number(settings?.subscriptionConfig?.rewardPercentage || 0) > 0;
+
+  const potentialReward = (profile?.isSubscriptionActive && isLoyaltyActive)
+    ? Math.floor(finalTotal * (Number(settings.subscriptionConfig.rewardPercentage) / 100))
     : 0;
 
   const handleUpdateQuantity = (item: any, delta: number) => {

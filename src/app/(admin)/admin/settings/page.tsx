@@ -77,6 +77,7 @@ const settingsSchema = z.object({
   metaTitle: z.string().nullish().transform(val => val ?? ''),
   metaDescription: z.string().nullish().transform(val => val ?? ''),
   subscriptionConfig: z.object({
+    enabled: z.boolean().default(false),
     activationThreshold: z.number().min(0, 'Threshold cannot be negative'),
     rewardPercentage: z.number().min(0, 'Percentage cannot be negative').max(100, 'Cannot exceed 100%'),
   }).optional(),
@@ -241,8 +242,9 @@ export default function SettingsPage() {
                 deliveryChargeInsideDhaka: result.data.deliveryChargeInsideDhaka ?? 60,
                 deliveryChargeOutsideDhaka: result.data.deliveryChargeOutsideDhaka ?? 120,
                 subscriptionConfig: {
-                  activationThreshold: result.data.subscriptionConfig?.activationThreshold ?? 5000,
-                  rewardPercentage: result.data.subscriptionConfig?.rewardPercentage ?? 5,
+                  enabled: result.data.subscriptionConfig?.enabled ?? false,
+                  activationThreshold: result.data.subscriptionConfig?.activationThreshold ?? 0,
+                  rewardPercentage: result.data.subscriptionConfig?.rewardPercentage ?? 0,
                 },
                 logoUrl: result.data.logoUrl || '',
                 uiTemplates: {

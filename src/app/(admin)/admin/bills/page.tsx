@@ -582,7 +582,7 @@ function ClientBillsContent() {
   const accountsReceivable = bills.reduce((sum, b) => sum + (b.currentBillDue || 0), 0);
 
   return (
-    <div className="flex-1 space-y-6 px-4 py-4">
+    <div className="flex-1 space-y-6 px-[2px] md:px-4 py-4">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Client Billing Manager</h2>

@@ -180,7 +180,7 @@ function ExpensesIncomesContent() {
   const isFiltered = !!(dateFilter.from || dateFilter.to || searchTerm);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-[2px] md:px-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight font-heading">Expenses & Incomes</h1>

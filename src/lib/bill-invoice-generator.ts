@@ -508,11 +508,17 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 9.5px;
-            color: #94a3b8;
-            border-top: 1px solid #f1f5f9;
-            padding-top: 4px;
+            font-size: 11px;
+            color: #64748b;
+            border-top: 1px solid #cbd5e1;
+            padding-top: 6px;
             margin-top: auto;
+          }
+          .page-num-placeholder {
+            font-weight: 700;
+            color: var(--foreground);
+            font-size: 11.5px;
+            letter-spacing: 0.02em;
           }
 
           /* ═══════════════ PRINT MEDIA ═══════════════ */
@@ -823,12 +829,8 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
               content.className = 'page-content';
               page.appendChild(content);
 
-              // Attach Header: Full header on Page 1, compact header on Page 2+
-              if (currentPageIndex === 1) {
-                content.appendChild(docHeaderTpl.cloneNode(true));
-              } else {
-                content.appendChild(pageHeaderTpl.cloneNode(true));
-              }
+              // Attach Header: Full header identical to first page on all pages
+              content.appendChild(docHeaderTpl.cloneNode(true));
 
               // Attach Table with Column Headers
               var table = tableTpl.cloneNode(false);

@@ -110,9 +110,17 @@ export function generateDescriptionHtml(description?: string): string {
       // Not valid JSON, fall through
     }
   }
-  // Plain text / HTML fallback — escape and wrap in paragraph
-  const escaped = trimmed.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  return `<p style="margin:2px 0">${escaped.replace(/\n/g, '<br>')}</p>`;
+  // Plain text / HTML fallback — split into block divs so print pagination can fragment smoothly across pages
+  const lines = trimmed.split(/\r?\n/);
+  return lines
+    .map((line) => {
+      const escaped = line
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      return `<div style="margin:1px 0;line-height:1.4;">${escaped || '&nbsp;'}</div>`;
+    })
+    .join('');
 }
 
 
@@ -311,12 +319,13 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
           table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 30px;
+            margin-bottom: 24px;
             page-break-inside: auto;
+            break-inside: auto;
           }
           tr {
-            page-break-inside: avoid;
-            page-break-after: auto;
+            page-break-inside: auto;
+            break-inside: auto;
           }
           thead {
             display: table-header-group;
@@ -340,6 +349,8 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
             padding: 8px 10px;
             border-bottom: 1px solid #e2e8f0;
             vertical-align: top;
+            page-break-inside: auto;
+            break-inside: auto;
           }
           .text-right {
             text-align: right;
@@ -351,6 +362,8 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
             display: flex;
             justify-content: flex-end;
             margin-bottom: 20px;
+            page-break-inside: avoid;
+            break-inside: avoid;
           }
           .totals-box {
             width: 320px;
@@ -371,6 +384,10 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
             font-weight: 700;
             padding-top: 8px;
           }
+          .terms-container {
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
           .footer {
             text-align: center;
             font-size: 11px;
@@ -378,6 +395,8 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
             border-top: 1px solid var(--border);
             padding-top: 20px;
             margin-top: auto;
+            page-break-inside: avoid;
+            break-inside: avoid;
           }
           @media print {
             .no-print {
@@ -386,12 +405,49 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
             body {
               padding: 0 !important;
               margin: 0 !important;
+              background: #ffffff !important;
             }
             .bill-container {
               padding: 0 !important;
               max-width: 100% !important;
               width: 100% !important;
-              min-height: 277mm !important;
+              min-height: auto !important;
+              height: auto !important;
+              display: block !important;
+            }
+            .header {
+              padding-bottom: 14px !important;
+              margin-bottom: 14px !important;
+            }
+            .details-grid {
+              margin-bottom: 16px !important;
+            }
+            table {
+              margin-bottom: 16px !important;
+              page-break-inside: auto !important;
+              break-inside: auto !important;
+            }
+            tr {
+              page-break-inside: auto !important;
+              break-inside: auto !important;
+            }
+            td {
+              page-break-inside: auto !important;
+              break-inside: auto !important;
+            }
+            .totals-container {
+              page-break-inside: avoid !important;
+              break-inside: avoid !important;
+              margin-bottom: 14px !important;
+            }
+            .terms-container {
+              page-break-inside: avoid !important;
+              break-inside: avoid !important;
+            }
+            .footer {
+              margin-top: 24px !important;
+              page-break-inside: avoid !important;
+              break-inside: avoid !important;
             }
             @page {
               size: A4 portrait;
@@ -551,7 +607,7 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
               </div>
             </div>
             
-            <div style="margin-top: 15px; margin-bottom: 25px; font-size: 13px; border-top: 1px dashed var(--border); padding-top: 10px;">
+            <div class="terms-container" style="margin-top: 15px; margin-bottom: 25px; font-size: 13px; border-top: 1px dashed var(--border); padding-top: 10px;">
               <div>
                 <strong>Amount in Words:</strong> ${numberToWords(amountToConvert)} Taka Only ${bill.vatTaxIncluded !== undefined ? `(${bill.vatTaxIncluded ? 'VAT & Tax Included' : 'VAT & Tax Excluded'})` : ''}
               </div>

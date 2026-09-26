@@ -52,8 +52,7 @@ export function numberToWords(num: number): string {
   return convertBengaliStyle(num).trim();
 }
 
-// Converts TipTap JSON description to safe HTML for PDF embedding
-// Mirrors the renderNode logic from src/lib/server-html.ts
+// Converts TipTap JSON node to safe HTML
 function renderDescriptionNode(node: any): string {
   if (!node) return '';
   if (node.type === 'text') {
@@ -97,32 +96,51 @@ function renderDescriptionNode(node: any): string {
   }
 }
 
-export function generateDescriptionHtml(description?: string): string {
-  if (!description) return '';
+// Splits description into individual printable lines so Chrome print pagination
+// can break cleanly between rows and reliably repeat the table heading (thead).
+export function getDescriptionLines(description?: string): string[] {
+  if (!description) return [];
   const trimmed = description.trim();
   if (trimmed.startsWith('{')) {
     try {
       let parsed = JSON.parse(trimmed);
-      // Handle double-stringified JSON
       if (typeof parsed === 'string') parsed = JSON.parse(parsed);
-      return renderDescriptionNode(parsed);
-    } catch (e) {
-      // Not valid JSON, fall through
+      if (parsed && parsed.type === 'doc' && Array.isArray(parsed.content)) {
+        const lines: string[] = [];
+        parsed.content.forEach((child: any) => {
+          const html = renderDescriptionNode(child);
+          if (html && html.trim() && html !== '<p style="margin:2px 0">&nbsp;</p>') {
+            lines.push(html);
+          }
+        });
+        if (lines.length > 0) return lines;
+      }
+      const fullHtml = renderDescriptionNode(parsed);
+      if (fullHtml) return [fullHtml];
+    } catch {
+      // not JSON, fall through to plain text
     }
   }
-  // Plain text / HTML fallback — split into block divs so print pagination can fragment smoothly across pages
-  const lines = trimmed.split(/\r?\n/);
-  return lines
-    .map((line) => {
-      const escaped = line
+
+  // Plain text fallback
+  return trimmed
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line.length > 0)
+    .map(line => {
+      return line
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
-      return `<div style="margin:1px 0;line-height:1.4;">${escaped || '&nbsp;'}</div>`;
-    })
-    .join('');
+    });
 }
 
+// Kept for backward compatibility with other components
+export function generateDescriptionHtml(description?: string): string {
+  const lines = getDescriptionLines(description);
+  if (lines.length === 0) return '';
+  return lines.map(l => `<div style="margin:1px 0;line-height:1.4;">${l}</div>`).join('');
+}
 
 export async function generateBillPDF(bill: any, settings: any, mode: 'download' | 'print' = 'download') {
   const brandName = settings?.brandName || "Inflation Engineering";
@@ -206,9 +224,14 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
 
   const clientName = bill.clientName || bill.supplier?.name || "N/A";
   const clientAddress = bill.clientAddress || bill.supplier?.companyName || "";
+  const formattedClientAddress = clientAddress ? clientAddress.replace(/(\b[A-Za-z]+)\s+(\d{4,5}\b)/g, '$1&nbsp;$2') : "";
   const clientPhone = bill.clientPhone || bill.supplier?.phone || "";
 
   const amountToConvert = docType === 'bill' || docType === 'supplier-bill' ? Math.round(bill.gTotal || bill.total || 0) : Math.round(bill.total || 0);
+
+  const safeBrandName = JSON.stringify(brandName);
+  const safeTitle = JSON.stringify(title);
+  const safeInvoiceId = JSON.stringify(invoiceId);
 
   const htmlContent = `
     <!DOCTYPE html>
@@ -216,7 +239,7 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
       <head>
         <meta charset="utf-8">
         <title>${title} #${invoiceId}</title>
-        <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+        <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;600;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
         <style>
           :root {
             --primary: ${primary};
@@ -232,138 +255,218 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
             print-color-adjust: exact !important;
           }
           body {
-            font-family: 'Inter', 'Noto Sans Bengali', sans-serif;
+            font-family: 'Inter', 'Noto Sans Bengali', -apple-system, BlinkMacSystemFont, sans-serif;
             margin: 0;
-            padding: 20px;
+            padding: 0;
             color: var(--foreground);
-            background-color: var(--background);
-            font-size: 14px;
-            line-height: 1.5;
+            background-color: #f1f5f9;
+            font-size: 12.5px;
+            line-height: 1.45;
           }
-          .bill-container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: var(--background);
-            padding: 20px;
-            min-height: 260mm;
+          .no-print {
+            position: sticky;
+            top: 0;
+            z-index: 9999;
+            background: #ffffff;
+            border-bottom: 1px solid #e2e8f0;
+            padding: 12px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+          }
+
+          /* ── Paged Layout ── */
+          #pages-container {
+            padding: 24px 0 40px 0;
+          }
+          .print-page {
+            width: 210mm;
+            min-height: 297mm;
+            box-sizing: border-box;
+            margin: 0 auto 24px auto;
+            background: #ffffff;
+            padding: 10mm 10mm 10mm 10mm;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
             display: flex;
             flex-direction: column;
+            justify-content: space-between;
+            page-break-after: always;
+            break-after: page;
+            page-break-inside: avoid;
+            break-inside: avoid;
+            position: relative;
           }
+          .print-page:last-child {
+            page-break-after: avoid;
+            break-after: avoid;
+            margin-bottom: 0;
+          }
+          .page-content {
+            flex: 1;
+            display: block;
+          }
+
+          /* ── Page 1 Full Header ── */
           .header {
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
             border-bottom: 2px solid var(--border);
-            padding-bottom: 20px;
-            margin-bottom: 20px;
+            padding-bottom: 10px;
+            margin-bottom: 10px;
           }
           .brand-logo-container {
             display: flex;
             flex-direction: column;
           }
           .brand-logo-img {
-            max-height: 60px;
-            max-width: 220px;
+            max-height: 48px;
+            max-width: 180px;
             object-fit: contain;
-            margin-bottom: 5px;
+            margin-bottom: 4px;
           }
           .brand-logo {
-            font-size: 14px;
+            font-size: 15.5px;
             font-weight: 700;
             color: var(--primary);
             text-transform: uppercase;
-            margin-bottom: 4px;
+            margin-bottom: 3px;
             letter-spacing: 0.05em;
           }
           .brand-details {
-            font-size: 12px;
+            font-size: 11px;
             color: var(--muted-foreground);
-            line-height: 1.4;
+            line-height: 1.35;
           }
           .bill-title {
-            font-size: 32px;
+            font-size: 28px;
             font-weight: 800;
             color: var(--foreground);
-            text-align: left;
-            margin: 0 0 8px 0;
+            margin: 0 0 3px 0;
             letter-spacing: -0.025em;
             text-transform: uppercase;
           }
           .details-grid {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 30px;
+            margin-bottom: 12px;
           }
           .bill-to, .bill-info {
             width: 48%;
           }
           .bill-to h3, .bill-info h3 {
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 700;
             text-transform: uppercase;
-            margin-bottom: 10px;
+            margin: 0 0 4px 0;
             color: var(--muted-foreground);
+            letter-spacing: 0.03em;
           }
           .bill-to p, .bill-info p {
-            margin: 4px 0;
+            margin: 2px 0;
+            font-size: 12px;
           }
           .info-row {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 4px;
+            margin-bottom: 2px;
+            font-size: 12px;
           }
           .info-label {
             font-weight: 600;
             color: var(--muted-foreground);
           }
-          table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 24px;
-            page-break-inside: auto;
-            break-inside: auto;
+
+          /* ── Subsequent Pages Compact Header ── */
+          .page-header {
+            width: 48%;
+            max-width: 48%;
+            box-sizing: border-box;
+            margin-bottom: 12px;
           }
-          tr {
-            page-break-inside: auto;
-            break-inside: auto;
-          }
-          thead {
-            display: table-header-group;
-          }
-          tfoot {
-            display: table-footer-group;
-          }
-          th {
-            background-color: var(--primary);
-            color: var(--primary-foreground);
+          .page-header-brand {
+            display: flex;
+            flex-direction: column;
             text-align: left;
-            padding: 8px 10px;
-            font-size: 11px;
-            font-weight: 700;
+            width: 100%;
+          }
+          .page-header-title {
+            font-size: 13px;
+            font-weight: 800;
+            color: var(--primary);
             text-transform: uppercase;
             letter-spacing: 0.05em;
-            border-top: 1px solid #cbd5e1;
-            border-bottom: 2px solid #94a3b8;
+            margin-bottom: 3px;
+          }
+          .page-header-lines {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+          }
+          .page-header-line {
+            font-size: 12px;
+            color: var(--foreground);
+            line-height: 1.4;
+          }
+          .page-header-line strong {
+            color: var(--foreground);
+            font-weight: 600;
+          }
+
+          /* ── Table Styling ── */
+          table.invoice-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0;
+          }
+          th.col-header {
+            background-color: var(--primary) !important;
+            color: var(--primary-foreground) !important;
+            text-align: left;
+            padding: 6px 8px !important;
+            font-size: 11px !important;
+            font-weight: 700 !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.05em !important;
+            border-top: 1px solid var(--border) !important;
+            border-bottom: 2px solid var(--border) !important;
           }
           td {
-            padding: 8px 10px;
-            border-bottom: 1px solid #e2e8f0;
+            padding: 4px 8px;
             vertical-align: top;
-            page-break-inside: auto;
-            break-inside: auto;
+            font-size: 11.5px;
+            border: none;
           }
-          .text-right {
-            text-align: right;
+          .text-right { text-align: right; }
+          .text-center { text-align: center; }
+
+          .item-main-row td {
+            border-top: 1px solid #e2e8f0;
+            padding-top: 5px;
+            padding-bottom: 2px;
+            font-weight: 500;
           }
-          .text-center {
-            text-align: center;
+          .item-desc-row td {
+            padding-top: 1px;
+            padding-bottom: 1px;
+            color: var(--muted-foreground);
+            font-size: 10.5px;
+            line-height: 1.35;
           }
+          .item-last-row td {
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 5px;
+          }
+
+          /* ── Totals, Terms, Footer ── */
           .totals-container {
             display: flex;
             justify-content: flex-end;
-            margin-bottom: 20px;
-            page-break-inside: avoid;
-            break-inside: avoid;
+            margin-top: 10px;
+            margin-bottom: 10px;
           }
           .totals-box {
             width: 320px;
@@ -371,8 +474,8 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
           .total-row {
             display: flex;
             justify-content: space-between;
-            padding: 6px 0;
-            font-size: 13px;
+            padding: 3px 0;
+            font-size: 12px;
           }
           .total-row.highlight {
             font-weight: 600;
@@ -380,25 +483,44 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
           }
           .total-row.grand-total {
             border-top: 2px solid var(--border);
-            font-size: 15px;
+            font-size: 13.5px;
             font-weight: 700;
-            padding-top: 8px;
+            padding-top: 5px;
           }
           .terms-container {
-            page-break-inside: avoid;
-            break-inside: avoid;
+            margin-top: 8px;
+            margin-bottom: 10px;
+            font-size: 11.5px;
+            border-top: 1px dashed var(--border);
+            padding-top: 8px;
           }
           .footer {
             text-align: center;
-            font-size: 11px;
+            font-size: 10.5px;
             color: var(--muted-foreground);
             border-top: 1px solid var(--border);
-            padding-top: 20px;
-            margin-top: auto;
-            page-break-inside: avoid;
-            break-inside: avoid;
+            padding-top: 8px;
+            margin-top: 10px;
           }
+
+          /* ── Bottom Page Bar ── */
+          .page-bottom-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 9.5px;
+            color: #94a3b8;
+            border-top: 1px solid #f1f5f9;
+            padding-top: 4px;
+            margin-top: auto;
+          }
+
+          /* ═══════════════ PRINT MEDIA ═══════════════ */
           @media print {
+            @page {
+              size: A4 portrait;
+              margin: 10mm 10mm 10mm 10mm;
+            }
             .no-print {
               display: none !important;
             }
@@ -407,57 +529,46 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
               margin: 0 !important;
               background: #ffffff !important;
             }
-            .bill-container {
+            #pages-container {
               padding: 0 !important;
-              max-width: 100% !important;
+              margin: 0 !important;
+            }
+            .print-page {
               width: 100% !important;
-              min-height: auto !important;
-              height: auto !important;
+              max-width: 100% !important;
+              height: 274mm !important;
+              min-height: 274mm !important;
+              max-height: 274mm !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              border: none !important;
+              box-shadow: none !important;
+              border-radius: 0 !important;
+              display: flex !important;
+              flex-direction: column !important;
+              justify-content: space-between !important;
+              page-break-after: always !important;
+              break-after: page !important;
+              page-break-inside: avoid !important;
+              break-inside: avoid !important;
+            }
+            .print-page:last-child {
+              page-break-after: avoid !important;
+              break-after: avoid !important;
+            }
+            .page-content {
+              flex: 1 !important;
               display: block !important;
             }
-            .header {
-              padding-bottom: 14px !important;
-              margin-bottom: 14px !important;
-            }
-            .details-grid {
-              margin-bottom: 16px !important;
-            }
-            table {
-              margin-bottom: 16px !important;
-              page-break-inside: auto !important;
-              break-inside: auto !important;
-            }
-            tr {
-              page-break-inside: auto !important;
-              break-inside: auto !important;
-            }
-            td {
-              page-break-inside: auto !important;
-              break-inside: auto !important;
-            }
-            .totals-container {
-              page-break-inside: avoid !important;
-              break-inside: avoid !important;
-              margin-bottom: 14px !important;
-            }
-            .terms-container {
-              page-break-inside: avoid !important;
-              break-inside: avoid !important;
-            }
-            .footer {
-              margin-top: 24px !important;
-              page-break-inside: avoid !important;
-              break-inside: avoid !important;
-            }
-            @page {
-              size: A4 portrait;
-              margin: 10mm;
+            .page-bottom-bar {
+              margin-top: auto !important;
             }
           }
         </style>
       </head>
       <body>
-        <div class="no-print" style="position: sticky; top: 0; z-index: 9999; background: #ffffff; border-bottom: 1px solid #e2e8f0; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin: -20px -20px 24px -20px;">
+        <!-- Top Toolbar for Screen View -->
+        <div class="no-print">
           <div style="font-weight: 600; font-size: 14px; color: #1e293b; display: flex; align-items: center; gap: 8px;">
             <span>${title} #${invoiceId}</span>
           </div>
@@ -471,161 +582,371 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
             </button>
           </div>
         </div>
-        <div class="bill-container">
-          <div class="header">
-            <div class="brand-logo-container">
-              <h1 class="bill-title">${title}</h1>
-              <div class="brand-logo">${brandName}</div>
-              <div class="brand-details">
-                ${brandAddress ? `<div>${brandAddress}</div>` : ''}
-                <div>Email: ${brandEmail} | Phone: ${brandPhone}</div>
-              </div>
-            </div>
-          </div>
 
-          <div class="details-grid">
-            <div class="bill-to">
-              <h3>${labelTo}</h3>
-              <p><strong>${clientName}</strong></p>
-              ${clientAddress ? `<p>Address: ${clientAddress}</p>` : ''}
-              ${clientPhone ? `<p>Phone: ${clientPhone}</p>` : ''}
-              ${bill.clientEmail ? `<p>Email: ${bill.clientEmail}</p>` : ''}
-            </div>
-            <div class="bill-info">
-              <h3>Document Info</h3>
-              <div class="info-row">
-                <span class="info-label">${labelNo}</span>
-                <span>${invoiceId}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">Date</span>
-                <span>${formattedDate}</span>
-              </div>
-              ${docType === 'bill' ? `
-                <div class="info-row">
-                  <span class="info-label">Status</span>
-                  <span>${bill.status || "Pending"}</span>
+        <!-- SOURCE TEMPLATES (Hidden, measured and cloned into physical pages) -->
+        <div id="source-templates" style="display: none;">
+          <!-- Template: Page 1 Full Document Header -->
+          <div id="tpl-doc-header">
+            <div class="header">
+              <div class="brand-logo-container">
+                <h1 class="bill-title">${title}</h1>
+                <div class="brand-logo">${brandName}</div>
+                <div class="brand-details">
+                  ${brandAddress ? `<div>${brandAddress}</div>` : ''}
+                  <div>Email: ${brandEmail} | Phone: ${brandPhone}</div>
                 </div>
-                ${bill.status === 'Due' && bill.expectedReceivableDate ? `
+              </div>
+            </div>
+
+            <div class="details-grid">
+              <div class="bill-to">
+                <h3>${labelTo}</h3>
+                <p><strong>${clientName}</strong></p>
+                ${clientAddress ? `<p>Address: ${formattedClientAddress}</p>` : ''}
+                ${clientPhone ? `<p>Phone: ${clientPhone}</p>` : ''}
+                ${bill.clientEmail ? `<p>Email: ${bill.clientEmail}</p>` : ''}
+              </div>
+              <div class="bill-info">
+                <h3>Document Info</h3>
+                <div class="info-row">
+                  <span class="info-label">${labelNo}</span>
+                  <span>${invoiceId}</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">Date</span>
+                  <span>${formattedDate}</span>
+                </div>
+                ${docType === 'bill' ? `
                   <div class="info-row">
-                    <span class="info-label">Expected Date</span>
-                    <span>${format(new Date(bill.expectedReceivableDate), "dd MMM yyyy")}</span>
+                    <span class="info-label">Status</span>
+                    <span>${bill.status || "Pending"}</span>
+                  </div>
+                  ${bill.status === 'Due' && bill.expectedReceivableDate ? `
+                    <div class="info-row">
+                      <span class="info-label">Expected Date</span>
+                      <span>${format(new Date(bill.expectedReceivableDate), "dd MMM yyyy")}</span>
+                    </div>
+                  ` : ''}
+                ` : ''}
+                ${docType === 'offer' && bill.expectedDeliveryDate ? `
+                  <div class="info-row">
+                    <span class="info-label">Exp. Delivery</span>
+                    <span>${format(new Date(bill.expectedDeliveryDate), "dd MMM yyyy")}</span>
                   </div>
                 ` : ''}
-              ` : ''}
-              ${docType === 'offer' && bill.expectedDeliveryDate ? `
-                <div class="info-row">
-                  <span class="info-label">Exp. Delivery</span>
-                  <span>${format(new Date(bill.expectedDeliveryDate), "dd MMM yyyy")}</span>
-                </div>
-              ` : ''}
+              </div>
             </div>
           </div>
 
-          <table>
+          <!-- Template: Subsequent Pages Compact Header -->
+          <div id="tpl-page-header">
+            <div class="page-header">
+              <div class="page-header-brand">
+                <div class="page-header-title">${brandName}</div>
+                <div class="page-header-lines">
+                  <div class="page-header-line">
+                    <span>${title} <strong>#${invoiceId}</strong></span>
+                  </div>
+                  <div class="page-header-line">
+                    <span>${docType === 'supplier-bill' ? 'Supplier:' : 'Client:'} <strong>${clientName}</strong></span>
+                  </div>
+                  ${clientAddress ? `
+                    <div class="page-header-line">
+                      <span>Address: ${formattedClientAddress}</span>
+                    </div>
+                  ` : ''}
+                  <div class="page-header-line">
+                    <span>Date: <strong>${formattedDate}</strong></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Template: Table Structure with Column Headers -->
+          <table id="tpl-table" class="invoice-table">
             <thead>
-              <tr>
-                <th style="width: 50px;">#</th>
-                <th>Title/Description</th>
-                <th class="text-center" style="width: 80px;">Qty</th>
+              <tr class="table-columns-tr">
+                <th style="width: 40px;" class="col-header text-center">#</th>
+                <th class="col-header">Title/Description</th>
+                <th class="col-header text-center" style="width: 70px;">Qty</th>
                 ${docType !== 'chalan' ? `
-                  <th class="text-right" style="width: 120px;">Rate</th>
-                  <th class="text-right" style="width: 120px;">Amount</th>
+                  <th class="col-header text-right" style="width: 110px;">Rate</th>
+                  <th class="col-header text-right" style="width: 120px;">Amount</th>
                 ` : ''}
               </tr>
             </thead>
-            <tbody>
-              ${items.map((item: any, index: number) => `
-                <tr>
-                  <td>${index + 1}</td>
-                  <td>
-                    <strong>${item.name || ""}</strong>
-                    ${(() => { const html = generateDescriptionHtml(item.description); return html ? `<div style="color:var(--muted-foreground);font-size:11px;margin-top:3px;line-height:1.4;">${html}</div>` : ''; })()}
-                  </td>
-                  <td class="text-center">${item.quantity || 1}</td>
-                  ${docType !== 'chalan' ? `
-                    <td class="text-right">৳${Math.round(item.price || 0)}</td>
-                    <td class="text-right">৳${Math.round((item.price || 0) * (item.quantity || 1))}</td>
-                  ` : ''}
-                </tr>
-              `).join('')}
+            <tbody id="source-tbody">
+              ${items.map((item: any, index: number) => {
+                const descLines = getDescriptionLines(item.description);
+                const hasDesc = descLines.length > 0;
+                const isChalan = docType === 'chalan';
 
+                let rowHtml = `
+                  <tr class="item-main-row ${!hasDesc ? 'item-last-row' : ''}">
+                    <td class="text-center" style="font-weight: 600;">${index + 1}</td>
+                    <td style="font-weight: 600;">${item.name || ""}</td>
+                    <td class="text-center">${item.quantity || 1}</td>
+                    ${!isChalan ? `
+                      <td class="text-right">&#2547;${Math.round(item.price || 0)}</td>
+                      <td class="text-right">&#2547;${Math.round((item.price || 0) * (item.quantity || 1))}</td>
+                    ` : ''}
+                  </tr>
+                `;
 
+                descLines.forEach((line, lineIdx) => {
+                  const isLast = lineIdx === descLines.length - 1;
+                  rowHtml += `
+                    <tr class="item-desc-row ${isLast ? 'item-last-row' : ''}">
+                      <td></td>
+                      <td>${line}</td>
+                      <td></td>
+                      ${!isChalan ? `
+                        <td></td>
+                        <td></td>
+                      ` : ''}
+                    </tr>
+                  `;
+                });
+
+                return rowHtml;
+              }).join('')}
             </tbody>
           </table>
 
-          ${docType !== 'chalan' ? `
-            <div class="totals-container">
-              <div class="totals-box">
-                <div class="total-row">
-                  <span>Subtotal:</span>
-                  <span>৳${Math.round(bill.subtotal || 0)}</span>
-                </div>
-                ${bill.deliveryCharge > 0 ? `
+          <!-- Template: Totals, Terms, and Footer -->
+          <div id="tpl-totals">
+            ${docType !== 'chalan' ? `
+              <div class="totals-container">
+                <div class="totals-box">
                   <div class="total-row">
-                    <span>Delivery Charge:</span>
-                    <span>৳${Math.round(bill.deliveryCharge)}</span>
+                    <span>Subtotal:</span>
+                    <span>&#2547;${Math.round(bill.subtotal || 0)}</span>
                   </div>
-                ` : ''}
-                ${bill.serviceFee > 0 ? `
-                  <div class="total-row">
-                    <span>Service Fee:</span>
-                    <span>৳${Math.round(bill.serviceFee)}</span>
-                  </div>
-                ` : ''}
-                ${bill.discount > 0 ? `
-                  <div class="total-row" style="color: var(--primary);">
-                    <span>${bill.discountType === 'percentage' ? `Discount (${bill.discountValue}%):` : 'Discount:'}</span>
-                    <span>- ৳${Math.round(bill.discount)}</span>
-                  </div>
-                ` : ''}
-                <div class="total-row highlight">
-                  <span>Total:</span>
-                  <span>৳${Math.round(bill.total || 0)}</span>
-                </div>
-                
-                ${docType === 'bill' ? `
-                  ${bill.prevDue > 0 ? `
+                  ${bill.deliveryCharge > 0 ? `
                     <div class="total-row">
-                      <span>Previous Due:</span>
-                      <span>৳${Math.round(bill.prevDue)}</span>
+                      <span>Delivery Charge:</span>
+                      <span>&#2547;${Math.round(bill.deliveryCharge)}</span>
                     </div>
                   ` : ''}
-                  <div class="total-row grand-total">
-                    <span>Grand Total:</span>
-                    <span>৳${Math.round(bill.gTotal || 0)}</span>
+                  ${bill.serviceFee > 0 ? `
+                    <div class="total-row">
+                      <span>Service Fee:</span>
+                      <span>&#2547;${Math.round(bill.serviceFee)}</span>
+                    </div>
+                  ` : ''}
+                  ${bill.discount > 0 ? `
+                    <div class="total-row" style="color: var(--primary);">
+                      <span>${bill.discountType === 'percentage' ? `Discount (${bill.discountValue}%):` : 'Discount:'}</span>
+                      <span>- &#2547;${Math.round(bill.discount)}</span>
+                    </div>
+                  ` : ''}
+                  <div class="total-row highlight">
+                    <span>Total:</span>
+                    <span>&#2547;${Math.round(bill.total || 0)}</span>
                   </div>
-                  <div class="total-row">
-                    <span>Paid Amount:</span>
-                    <span>৳${Math.round(bill.cashIn || 0)}</span>
-                  </div>
-                  <div class="total-row highlight" style="${bill.currentBillDue > 0 ? 'color: #ef4444;' : 'color: var(--primary);'}">
-                    <span>Remaining Due:</span>
-                    <span>৳${Math.round(bill.currentBillDue || 0)}</span>
+                  ${docType === 'bill' ? `
+                    ${bill.prevDue > 0 ? `
+                      <div class="total-row">
+                        <span>Previous Due:</span>
+                        <span>&#2547;${Math.round(bill.prevDue)}</span>
+                      </div>
+                    ` : ''}
+                    <div class="total-row grand-total">
+                      <span>Grand Total:</span>
+                      <span>&#2547;${Math.round(bill.gTotal || 0)}</span>
+                    </div>
+                    <div class="total-row">
+                      <span>Paid Amount:</span>
+                      <span>&#2547;${Math.round(bill.cashIn || 0)}</span>
+                    </div>
+                    <div class="total-row highlight" style="${bill.currentBillDue > 0 ? 'color: #ef4444;' : 'color: var(--primary);'}">
+                      <span>Remaining Due:</span>
+                      <span>&#2547;${Math.round(bill.currentBillDue || 0)}</span>
+                    </div>
+                  ` : ''}
+                </div>
+              </div>
+
+              <div class="terms-container">
+                <div>
+                  <strong>Amount in Words:</strong> ${numberToWords(amountToConvert)} Taka Only ${bill.vatTaxIncluded !== undefined ? `(${bill.vatTaxIncluded ? 'VAT & Tax Included' : 'VAT & Tax Excluded'})` : ''}
+                </div>
+                ${bill.termsAndConditions ? `
+                  <div style="margin-top: 6px;">
+                    <strong>Terms &amp; Conditions:</strong>
+                    <div style="white-space: pre-wrap; font-style: italic; color: #555; margin-top: 3px;">${bill.termsAndConditions}</div>
                   </div>
                 ` : ''}
               </div>
-            </div>
-            
-            <div class="terms-container" style="margin-top: 15px; margin-bottom: 25px; font-size: 13px; border-top: 1px dashed var(--border); padding-top: 10px;">
-              <div>
-                <strong>Amount in Words:</strong> ${numberToWords(amountToConvert)} Taka Only ${bill.vatTaxIncluded !== undefined ? `(${bill.vatTaxIncluded ? 'VAT & Tax Included' : 'VAT & Tax Excluded'})` : ''}
-              </div>
-              
-              ${bill.termsAndConditions ? `
-                <div style="margin-top: 8px;">
-                  <strong>Terms & Conditions:</strong>
-                  <div style="white-space: pre-wrap; font-style: italic; color: #555; margin-top: 4px;">${bill.termsAndConditions}</div>
-                </div>
-              ` : ''}
-            </div>
-          ` : ''}
 
-          <div class="footer">
-            <p style="margin: 5px 0; font-weight: 600;">${footerThankYou}</p>
-            <p style="margin: 5px 0; font-style: italic;">${footerGenerated}</p>
+              <div class="footer">
+                <p style="margin: 3px 0; font-weight: 600;">${footerThankYou}</p>
+                <p style="margin: 3px 0; font-style: italic;">${footerGenerated}</p>
+              </div>
+            ` : `
+              <div class="footer">
+                <p style="margin: 3px 0; font-weight: 600;">${footerThankYou}</p>
+                <p style="margin: 3px 0; font-style: italic;">${footerGenerated}</p>
+              </div>
+            `}
           </div>
         </div>
+
+        <!-- TARGET CONTAINER FOR RENDERED PAGES -->
+        <div id="pages-container"></div>
+
+        <script>
+          function paginateDocument() {
+            var container = document.getElementById('pages-container');
+            if (!container || container.children.length > 0) return;
+
+            var docHeaderTpl = document.getElementById('tpl-doc-header');
+            var pageHeaderTpl = document.getElementById('tpl-page-header');
+            var tableTpl = document.getElementById('tpl-table');
+            var totalsTpl = document.getElementById('tpl-totals');
+            var sourceRows = Array.from(document.querySelectorAll('#source-tbody tr'));
+
+            // Optimal printable height per A4 page (~970px to fully use the page)
+            var MAX_PAGE_HEIGHT = 970;
+
+            var currentPageIndex = 1;
+            var currentPageDiv = null;
+            var currentTableBody = null;
+            var currentContentDiv = null;
+
+            function createNewPage() {
+              var page = document.createElement('div');
+              page.className = 'print-page';
+
+              var content = document.createElement('div');
+              content.className = 'page-content';
+              page.appendChild(content);
+
+              // Attach Header: Full header on Page 1, compact header on Page 2+
+              if (currentPageIndex === 1) {
+                content.appendChild(docHeaderTpl.cloneNode(true));
+              } else {
+                content.appendChild(pageHeaderTpl.cloneNode(true));
+              }
+
+              // Attach Table with Column Headers
+              var table = tableTpl.cloneNode(false);
+              var thead = tableTpl.querySelector('thead').cloneNode(true);
+              table.appendChild(thead);
+              var tbody = document.createElement('tbody');
+              table.appendChild(tbody);
+              content.appendChild(table);
+
+              // Bottom Page Bar
+              var bottomBar = document.createElement('div');
+              bottomBar.className = 'page-bottom-bar';
+              bottomBar.innerHTML = '<span>' + ${safeBrandName} + ' • ' + ${safeTitle} + ' #' + ${safeInvoiceId} + '</span><span class="page-num-placeholder"></span>';
+              page.appendChild(bottomBar);
+
+              container.appendChild(page);
+
+              currentPageDiv = page;
+              currentContentDiv = content;
+              currentTableBody = tbody;
+              currentPageIndex++;
+              return page;
+            }
+
+            function getPageContentHeight() {
+              var h = 0;
+              var children = currentContentDiv.children;
+              for (var i = 0; i < children.length; i++) {
+                h += children[i].offsetHeight || 0;
+              }
+              return h;
+            }
+
+            createNewPage();
+
+            // Distribute rows across physical pages
+            sourceRows.forEach(function(row) {
+              var rowClone = row.cloneNode(true);
+              currentTableBody.appendChild(rowClone);
+
+              if (getPageContentHeight() > MAX_PAGE_HEIGHT && currentTableBody.children.length > 1) {
+                currentTableBody.removeChild(rowClone);
+                createNewPage();
+                currentTableBody.appendChild(rowClone);
+              }
+            });
+
+            // Append Totals, Terms, and Footer
+            if (totalsTpl) {
+              var totalsClone = totalsTpl.cloneNode(true);
+              currentContentDiv.appendChild(totalsClone);
+
+              if (getPageContentHeight() > MAX_PAGE_HEIGHT && currentTableBody.children.length > 0) {
+                currentContentDiv.removeChild(totalsClone);
+                createNewPage();
+                var emptyTable = currentContentDiv.querySelector('table');
+                if (emptyTable) emptyTable.style.display = 'none';
+                currentContentDiv.appendChild(totalsClone);
+              }
+            }
+
+            // Update all page numbers (Page 1 of X, Page 2 of X, etc.)
+            var allPages = document.querySelectorAll('.print-page');
+            var totalPages = allPages.length;
+            allPages.forEach(function(p, idx) {
+              var numElem = p.querySelector('.page-num-placeholder');
+              if (numElem) {
+                numElem.textContent = 'Page ' + (idx + 1) + ' of ' + totalPages;
+              }
+            });
+          }
+
+          var hasPrinted = false;
+          function doPrint() {
+            if (hasPrinted) return;
+            hasPrinted = true;
+            try {
+              window.focus();
+              window.print();
+            } catch (err) {
+              console.error('Print error:', err);
+            }
+          }
+
+          function init() {
+            var logo = document.querySelector('.brand-logo-img');
+            if (logo && !logo.complete) {
+              logo.onload = function() {
+                paginateDocument();
+                schedulePrint();
+              };
+              logo.onerror = function() {
+                paginateDocument();
+                schedulePrint();
+              };
+            } else {
+              paginateDocument();
+              schedulePrint();
+            }
+          }
+
+          function schedulePrint() {
+            if (document.fonts && document.fonts.ready) {
+              document.fonts.ready.then(function() {
+                setTimeout(doPrint, 350);
+              });
+            } else {
+              setTimeout(doPrint, 600);
+            }
+            setTimeout(doPrint, 1200);
+          }
+
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+          } else {
+            init();
+          }
+        </script>
       </body>
     </html>
   `;
@@ -635,32 +956,7 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
     printWindow.document.open();
     printWindow.document.write(htmlContent);
     printWindow.document.close();
-
-    let hasPrinted = false;
-    const triggerPrint = () => {
-      if (hasPrinted) return;
-      hasPrinted = true;
-      try {
-        printWindow.focus();
-        printWindow.print();
-      } catch (err) {
-        console.error('Print trigger error:', err);
-      }
-    };
-
-    if (printWindow.document.fonts && printWindow.document.fonts.ready) {
-      printWindow.document.fonts.ready.then(() => {
-        setTimeout(triggerPrint, 250);
-      });
-    }
-
-    printWindow.onload = () => {
-      setTimeout(triggerPrint, 250);
-    };
-
-    setTimeout(triggerPrint, 1000);
   } else {
     toast.error('Pop-up was blocked. Please allow pop-ups for this website to print/view PDF.');
   }
 }
-

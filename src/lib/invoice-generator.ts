@@ -323,7 +323,14 @@ export async function generateInvoicePDF(orderOrOrders: any | any[], settings: a
             }
             @page {
               size: A4;
-              margin: 15mm;
+              margin: 15mm 15mm 18mm 15mm;
+              @bottom-right {
+                content: "Page " counter(page);
+                font-size: 10px;
+                font-family: 'Inter', sans-serif;
+                font-weight: 600;
+                color: #64748b;
+              }
             }
           }
         </style>

@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
 import {
   Loader2,
   Plus,
@@ -35,7 +36,8 @@ import {
   Hash,
   ArrowRight,
   MoreHorizontal,
-  Edit
+  Edit,
+  CreditCard
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -146,6 +148,27 @@ function ClientOffersContent() {
 
   // Phone validation
   const [phoneError, setPhoneError] = useState('');
+
+  // ── Convert to Client Bill modal state ──
+  const [isConvertBillOpen, setIsConvertBillOpen] = useState(false);
+  const [convertBillLoading, setConvertBillLoading] = useState(false);
+  const [convertingFromOffer, setConvertingFromOffer] = useState<any>(null);
+  const [cbClientName, setCbClientName] = useState('');
+  const [cbClientPhone, setCbClientPhone] = useState('');
+  const [cbClientEmail, setCbClientEmail] = useState('');
+  const [cbClientAddress, setCbClientAddress] = useState('');
+  const [cbItems, setCbItems] = useState<BillItemInput[]>([{ name: '', description: '', quantity: 1, price: 0 }]);
+  const [cbDeliveryCharge, setCbDeliveryCharge] = useState<number>(0);
+  const [cbServiceFee, setCbServiceFee] = useState<number>(0);
+  const [cbDiscountType, setCbDiscountType] = useState<'fixed' | 'percentage'>('fixed');
+  const [cbDiscountValue, setCbDiscountValue] = useState<number>(0);
+  const [cbPrevDue, setCbPrevDue] = useState<number>(0);
+  const [cbCashIn, setCbCashIn] = useState<number>(0);
+  const [cbExpectedDate, setCbExpectedDate] = useState('');
+  const [cbPhoneError, setCbPhoneError] = useState('');
+  const [cbProductPickerOpen, setCbProductPickerOpen] = useState(false);
+  const [cbProductSearchTerm, setCbProductSearchTerm] = useState('');
+  const [cbSelectedVariants, setCbSelectedVariants] = useState<Record<string, string | null>>({});
 
   const fetchSuggestions = async () => {
     try {
@@ -517,6 +540,123 @@ function ClientOffersContent() {
     }
   };
 
+  const handleConvertToBill = (offer: any) => {
+    // Pre-fill convert bill form with offer data
+    setConvertingFromOffer(offer);
+    setCbClientName(offer.clientName || '');
+    setCbClientPhone(offer.clientPhone || '');
+    setCbClientEmail(offer.clientEmail || '');
+    setCbClientAddress(offer.clientAddress || '');
+    setCbItems(
+      Array.isArray(offer.items) && offer.items.length > 0
+        ? offer.items.map((it: any) => ({ name: it.name || '', description: it.description || '', quantity: it.quantity || 1, price: it.price || 0 }))
+        : [{ name: '', description: '', quantity: 1, price: 0 }]
+    );
+    setCbDeliveryCharge(offer.deliveryCharge || 0);
+    setCbServiceFee(offer.serviceFee || 0);
+    setCbDiscountType(offer.discountType || 'fixed');
+    setCbDiscountValue(offer.discountValue || 0);
+    setCbPrevDue(0);
+    setCbCashIn(0);
+    setCbExpectedDate('');
+    setCbPhoneError('');
+    setCbSelectedVariants({});
+    setCbProductSearchTerm('');
+    setCbProductPickerOpen(false);
+    setIsConvertBillOpen(true);
+  };
+
+  const resetConvertBillForm = () => {
+    setConvertingFromOffer(null);
+    setCbClientName('');
+    setCbClientPhone('');
+    setCbClientEmail('');
+    setCbClientAddress('');
+    setCbItems([{ name: '', description: '', quantity: 1, price: 0 }]);
+    setCbDeliveryCharge(0);
+    setCbServiceFee(0);
+    setCbDiscountType('fixed');
+    setCbDiscountValue(0);
+    setCbPrevDue(0);
+    setCbCashIn(0);
+    setCbExpectedDate('');
+    setCbPhoneError('');
+    setCbSelectedVariants({});
+    setCbProductSearchTerm('');
+    setCbProductPickerOpen(false);
+  };
+
+  const cbSubtotal = cbItems.reduce((sum, item) => sum + ((parseFloat(item.price as any) || 0) * (parseInt(item.quantity as any) || 1)), 0);
+  const cbDiscount = cbDiscountType === 'percentage' ? Math.round((cbSubtotal * cbDiscountValue) / 100) : cbDiscountValue;
+  const cbTotal = Math.max(0, cbSubtotal + cbDeliveryCharge + cbServiceFee - cbDiscount);
+  const cbGTotal = cbTotal + cbPrevDue;
+  const cbCurrentDue = Math.max(0, cbGTotal - cbCashIn);
+  const cbCalculatedStatus = cbCurrentDue <= 0 ? 'Paid' : 'Due';
+
+  const validateCbPhone = (phone: string) => {
+    const bdPhoneRegex = /^(?:\+?88)?01[3-9]\d{8}$/;
+    if (!phone.trim()) { setCbPhoneError('Phone number is required'); return false; }
+    if (!bdPhoneRegex.test(phone.replace(/\s/g, ''))) { setCbPhoneError('Enter a valid BD number (e.g. 017XXXXXXXX)'); return false; }
+    setCbPhoneError('');
+    return true;
+  };
+
+  const handleConvertBillSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cbClientName.trim() || !cbClientAddress.trim()) { toast.error('Client details are required'); return; }
+    if (!validateCbPhone(cbClientPhone)) { toast.error('Please enter a valid Bangladesh phone number'); return; }
+    const validItems = cbItems.filter(it => it.name.trim() !== '').map(it => ({ ...it, quantity: Math.max(1, parseInt(it.quantity as any) || 1), price: Math.max(0, parseFloat(it.price as any) || 0) }));
+    if (validItems.length === 0) { toast.error('At least one item is required'); return; }
+    if (cbCalculatedStatus === 'Due' && !cbExpectedDate) { toast.error('Expected receivable date is required for due bills'); return; }
+    try {
+      setConvertBillLoading(true);
+      const billData = {
+        clientName: cbClientName,
+        clientPhone: cbClientPhone,
+        clientEmail: cbClientEmail.trim() || undefined,
+        clientAddress: cbClientAddress,
+        items: validItems,
+        subtotal: cbSubtotal,
+        deliveryCharge: cbDeliveryCharge,
+        serviceFee: cbServiceFee,
+        discountType: cbDiscountType,
+        discountValue: cbDiscountValue,
+        discount: cbDiscount,
+        total: cbTotal,
+        prevDue: cbPrevDue,
+        gTotal: cbGTotal,
+        cashIn: cbCashIn,
+        currentBillDue: cbCurrentDue,
+        status: cbCalculatedStatus,
+        expectedReceivableDate: cbCalculatedStatus === 'Due' ? cbExpectedDate : undefined,
+        documentType: 'bill',
+        convertedFrom: convertingFromOffer?._id
+      };
+      const res = await fetch('/api/admin/bills', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(billData) });
+      if (!res.ok) throw new Error('Failed to create bill');
+      const createdBill = await res.json();
+      setIsConvertBillOpen(false);
+      resetConvertBillForm();
+      // Show success with print option (direct user click avoids popup blocker)
+      await Swal.fire({
+        title: 'Bill Generated!',
+        text: `Client Bill ${createdBill.invoiceNo} has been created successfully.`,
+        icon: 'success',
+        showCancelButton: true,
+        confirmButtonText: 'Print Bill Now',
+        cancelButtonText: 'Close'
+      }).then((printRes) => {
+        if (printRes.isConfirmed) {
+          generateBillPDF(createdBill, settings, 'print');
+        }
+      });
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to create bill');
+    } finally {
+      setConvertBillLoading(false);
+    }
+  };
+
   const handleDeleteOffer = async (offerId: string) => {
     const result = await Swal.fire({
       title: 'Are you sure?',
@@ -678,6 +818,9 @@ function ClientOffersContent() {
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => handleConvertToChalan(offer)}>
                                 <ArrowRight className="mr-2 h-4 w-4" /> Convert to Challan
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleConvertToBill(offer)}>
+                                <FileText className="mr-2 h-4 w-4" /> Convert to Client Bill
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 className="text-destructive focus:text-destructive"
@@ -1236,6 +1379,17 @@ function ClientOffersContent() {
                   <Printer className="mr-2 h-4 w-4" /> Print Quotation
                 </Button>
                 <Button
+                  variant="outline"
+                  className="bg-primary/10 text-primary border-primary/20 hover:bg-primary/20"
+                  onClick={() => {
+                    const off = selectedOffer;
+                    setSelectedOffer(null);
+                    handleConvertToBill(off);
+                  }}
+                >
+                  <FileText className="mr-2 h-4 w-4" /> Convert to Client Bill
+                </Button>
+                <Button
                   className="bg-primary text-primary-foreground"
                   onClick={() => {
                     const off = selectedOffer;
@@ -1248,6 +1402,198 @@ function ClientOffersContent() {
               </DialogFooter>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Convert to Client Bill Dialog ── */}
+      <Dialog open={isConvertBillOpen} onOpenChange={(open) => { setIsConvertBillOpen(open); if (!open) resetConvertBillForm(); }}>
+        <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Generate Client Bill{convertingFromOffer ? ` — from ${convertingFromOffer.invoiceNo}` : ''}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleConvertBillSubmit} className="space-y-6">
+            {/* Client Info */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-muted/20 p-4 rounded-xl border">
+              <div className="space-y-1.5">
+                <Label htmlFor="cb-clientName" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <User className="h-3.5 w-3.5" /> Client Name *
+                </Label>
+                <input
+                  id="cb-clientName"
+                  value={cbClientName}
+                  onChange={(e) => setCbClientName(e.target.value)}
+                  placeholder="e.g. Rahim Khan"
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="cb-clientPhone" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <Phone className="h-3.5 w-3.5" /> Client Phone *
+                </Label>
+                <input
+                  id="cb-clientPhone"
+                  value={cbClientPhone}
+                  onChange={(e) => { setCbClientPhone(e.target.value); if (cbPhoneError) validateCbPhone(e.target.value); }}
+                  onBlur={(e) => validateCbPhone(e.target.value)}
+                  placeholder="e.g. 01712345678"
+                  className={`h-10 w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${cbPhoneError ? 'border-destructive' : 'border-input'}`}
+                  required
+                />
+                {cbPhoneError && <p className="text-[11px] text-destructive mt-0.5">{cbPhoneError}</p>}
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="cb-clientEmail" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <Mail className="h-3.5 w-3.5" /> Email (Optional)
+                </Label>
+                <input
+                  id="cb-clientEmail"
+                  type="email"
+                  value={cbClientEmail}
+                  onChange={(e) => setCbClientEmail(e.target.value)}
+                  placeholder="e.g. client@example.com"
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="cb-clientAddress" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <MapPin className="h-3.5 w-3.5" /> Client Address *
+                </Label>
+                <input
+                  id="cb-clientAddress"
+                  value={cbClientAddress}
+                  onChange={(e) => setCbClientAddress(e.target.value)}
+                  placeholder="e.g. Nawabpur, Dhaka"
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Bill Items */}
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h4 className="font-bold text-sm">Bill Items</h4>
+                <Button type="button" variant="outline" size="sm" onClick={() => setCbItems(prev => [...prev, { name: '', description: '', quantity: 1, price: 0 }])} className="font-bold">
+                  <Plus className="h-3 w-3 mr-1" /> Add Item
+                </Button>
+              </div>
+              <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1">
+                {cbItems.map((item, index) => (
+                  <div key={index} className="flex gap-2 items-center">
+                    <div className="flex-1 space-y-1">
+                      <input
+                        placeholder="Title"
+                        value={item.name}
+                        onChange={(e) => { const u = [...cbItems]; u[index].name = e.target.value; setCbItems(u); }}
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        required
+                      />
+                      <input
+                        placeholder="Description (Optional)"
+                        value={item.description || ''}
+                        onChange={(e) => { const u = [...cbItems]; u[index].description = e.target.value; setCbItems(u); }}
+                        className="h-8 w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      />
+                    </div>
+                    <input
+                      type="number" placeholder="Qty"
+                      value={item.quantity}
+                      onChange={(e) => { const u = [...cbItems]; u[index].quantity = Math.max(1, parseInt(e.target.value) || 1); setCbItems(u); }}
+                      className="w-20 h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      min="1"
+                    />
+                    <input
+                      type="number" placeholder="Rate"
+                      value={item.price || ''}
+                      onChange={(e) => { const u = [...cbItems]; u[index].price = Math.max(0, parseFloat(e.target.value) || 0); setCbItems(u); }}
+                      className="w-28 h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      min="0"
+                    />
+                    <Button type="button" variant="ghost" size="icon" onClick={() => { if (cbItems.length === 1) { setCbItems([{ name: '', description: '', quantity: 1, price: 0 }]); } else { setCbItems(cbItems.filter((_, i) => i !== index)); } }} className="text-destructive hover:bg-destructive/10 shrink-0 h-9 w-9">
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Totals & Adjustments */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t">
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="cb-deliveryCharge">Delivery Charge (৳)</Label>
+                    <input id="cb-deliveryCharge" type="number" value={cbDeliveryCharge || ''} onChange={(e) => setCbDeliveryCharge(Math.max(0, parseFloat(e.target.value) || 0))} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="cb-serviceFee">Service Fee (৳) <span className="text-muted-foreground font-normal text-xs">— Optional</span></Label>
+                    <input id="cb-serviceFee" type="number" value={cbServiceFee || ''} placeholder="0" onChange={(e) => setCbServiceFee(Math.max(0, parseFloat(e.target.value) || 0))} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="cb-prevDue">Previous Due (৳)</Label>
+                  <input id="cb-prevDue" type="number" value={cbPrevDue || ''} onChange={(e) => setCbPrevDue(Math.max(0, parseFloat(e.target.value) || 0))} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                </div>
+                <div className="grid grid-cols-3 gap-2 items-end">
+                  <div className="space-y-2 col-span-1">
+                    <Label>Discount Type</Label>
+                    <Select value={cbDiscountType} onValueChange={(val: any) => { setCbDiscountType(val); setCbDiscountValue(0); }}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="fixed">Fixed (৳)</SelectItem>
+                        <SelectItem value="percentage">Percent (%)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2 col-span-2">
+                    <Label>Discount Value</Label>
+                    <input type="number" value={cbDiscountValue || ''} onChange={(e) => setCbDiscountValue(Math.max(0, parseFloat(e.target.value) || 0))} placeholder={cbDiscountType === 'percentage' ? '%' : '৳'} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="cb-cashIn">Cash-in (Paid) (৳)</Label>
+                    <input id="cb-cashIn" type="number" value={cbCashIn || ''} onChange={(e) => setCbCashIn(Math.max(0, parseFloat(e.target.value) || 0))} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    <div className="pt-2">
+                      <Badge variant={cbCalculatedStatus === 'Paid' ? 'default' : 'destructive'} className={cbCalculatedStatus === 'Paid' ? 'bg-green-600 text-white border-none' : ''}>{cbCalculatedStatus}</Badge>
+                    </div>
+                  </div>
+                </div>
+                {cbCalculatedStatus === 'Due' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="cb-expectedDate">Expected Date of Receivable *</Label>
+                    <input id="cb-expectedDate" type="date" value={cbExpectedDate} onChange={(e) => setCbExpectedDate(e.target.value)} required className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                  </div>
+                )}
+              </div>
+
+              {/* Summary */}
+              <div className="bg-muted/40 p-4 rounded-lg space-y-3 border h-fit text-sm">
+                <h4 className="font-bold border-b pb-2 mb-2 text-base">Bill Summary</h4>
+                <div className="flex justify-between"><span>Subtotal:</span><span className="font-semibold">৳{cbSubtotal.toLocaleString()}</span></div>
+                {cbDeliveryCharge > 0 && <div className="flex justify-between"><span>Delivery Charge:</span><span>+ ৳{cbDeliveryCharge.toLocaleString()}</span></div>}
+                {cbServiceFee > 0 && <div className="flex justify-between"><span>Service Fee:</span><span>+ ৳{cbServiceFee.toLocaleString()}</span></div>}
+                {cbDiscount > 0 && <div className="flex justify-between text-green-600 font-medium"><span>Discount {cbDiscountType === 'percentage' && `(${cbDiscountValue}%)`}:</span><span>- ৳{cbDiscount.toLocaleString()}</span></div>}
+                <div className="flex justify-between border-t pt-2 font-bold text-base"><span>Total Bill:</span><span>৳{cbTotal.toLocaleString()}</span></div>
+                {cbPrevDue > 0 && <div className="flex justify-between text-muted-foreground"><span>Previous Due:</span><span>+ ৳{cbPrevDue.toLocaleString()}</span></div>}
+                <div className="flex justify-between border-t pt-2 font-bold text-lg text-primary"><span>Grand Total:</span><span>৳{cbGTotal.toLocaleString()}</span></div>
+                <div className="flex justify-between text-green-700 border-t pt-2"><span>Cash-in:</span><span>৳{cbCashIn.toLocaleString()}</span></div>
+                <div className="flex justify-between border-t pt-2 font-bold text-base text-destructive"><span>Remaining Due:</span><span>৳{cbCurrentDue.toLocaleString()}</span></div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsConvertBillOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={convertBillLoading} className="font-bold">
+                {convertBillLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}
+                Generate Bill
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

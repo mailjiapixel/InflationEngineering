@@ -491,16 +491,11 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
             margin-top: 8px;
             margin-bottom: 10px;
             font-size: 11.5px;
-            border-top: 1px dashed var(--border);
-            padding-top: 8px;
           }
           .footer {
             text-align: center;
             font-size: 10.5px;
             color: var(--muted-foreground);
-            border-top: 1px solid var(--border);
-            padding-top: 8px;
-            margin-top: 10px;
           }
 
           /* ── Bottom Page Bar ── */
@@ -787,13 +782,9 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
               </div>
 
               <div class="footer">
-                <p style="margin: 3px 0; font-weight: 600;">${footerThankYou}</p>
-                <p style="margin: 3px 0; font-style: italic;">${footerGenerated}</p>
               </div>
             ` : `
               <div class="footer">
-                <p style="margin: 3px 0; font-weight: 600;">${footerThankYou}</p>
-                <p style="margin: 3px 0; font-style: italic;">${footerGenerated}</p>
               </div>
             `}
           </div>
@@ -843,7 +834,8 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
               // Bottom Page Bar
               var bottomBar = document.createElement('div');
               bottomBar.className = 'page-bottom-bar';
-              bottomBar.innerHTML = '<span>' + ${safeBrandName} + ' • ' + ${safeTitle} + ' #' + ${safeInvoiceId} + '</span><span class="page-num-placeholder"></span>';
+              var footerNote = ${JSON.stringify(footerGenerated)};
+              bottomBar.innerHTML = '<span style="font-style: italic;">' + footerNote + '</span><span class="page-num-placeholder"></span>';
               page.appendChild(bottomBar);
 
               container.appendChild(page);
@@ -960,5 +952,373 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
     printWindow.document.close();
   } else {
     toast.error('Pop-up was blocked. Please allow pop-ups for this website to print/view PDF.');
+  }
+}
+
+/**
+ * Generates a professional Money / Payment Receipt popup for a client bill.
+ * Shows client info, purchased items, grand total, amount received this payment,
+ * and remaining due balance.
+ */
+export async function generatePaymentReceiptPDF(bill: any, settings: any, paymentAmount?: number) {
+  const brandName = settings?.brandName || 'Inflation Engineering';
+  const brandEmail = settings?.contact?.email || '';
+  const brandPhone = settings?.contact?.phone || '';
+  const brandAddress = settings?.contact?.address || '';
+
+  let primary = '#00D1B2';
+  let primaryForeground = '#ffffff';
+  let border = '#e2e8f0';
+  let mutedForeground = '#64748b';
+  let foreground = '#0f172a';
+
+  if (typeof window !== 'undefined') {
+    const rootStyle = getComputedStyle(document.documentElement);
+    const getColor = (varName: string, fallback: string) => {
+      const val = rootStyle.getPropertyValue(varName).trim();
+      if (!val) return fallback;
+      if (val.startsWith('#') || val.startsWith('rgb') || val.startsWith('hsl') || val.startsWith('oklch') || val.includes('(')) return val;
+      return `hsl(${val})`;
+    };
+    primary = getColor('--primary', primary);
+    primaryForeground = getColor('--primary-foreground', primaryForeground);
+    border = getColor('--border', border);
+    mutedForeground = getColor('--muted-foreground', mutedForeground);
+    foreground = getColor('--foreground', foreground);
+  }
+
+
+  const invoiceId = String(bill.invoiceNo || bill._id || '').toUpperCase();
+  const billDate = bill.date ? new Date(bill.date) : new Date();
+  const formattedDate = isValid(billDate) ? format(billDate, 'dd MMM yyyy') : 'N/A';
+  const receiptDate = format(new Date(), 'dd MMM yyyy');
+
+  const items: any[] = Array.isArray(bill.items) ? bill.items : [];
+  const grandTotal = Math.round(bill.gTotal || bill.total || 0);
+  const prevDue = Math.round(bill.prevDue || 0);
+  const billTotal = Math.round(bill.total || 0);
+  // paymentAmount = how much was received in this session; if not provided, use bill.cashIn
+  const amountReceived = Math.round(paymentAmount !== undefined ? paymentAmount : (bill.cashIn || 0));
+  const remainingDue = Math.max(0, Math.round(bill.currentBillDue !== undefined ? bill.currentBillDue : grandTotal - amountReceived));
+
+  const amountInWords = numberToWords(amountReceived);
+
+  const itemRows = items.map((item: any, idx: number) => {
+    const descLines = getDescriptionLines(item.description);
+    const hasDesc = descLines.length > 0;
+
+    let rowHtml = `
+      <tr class="item-main-row" style="border-top:1px solid ${border};${!hasDesc ? `border-bottom:1px solid ${border};` : ''}">
+        <td style="padding:6px 8px;color:${mutedForeground};font-size:11px;vertical-align:top;">${idx + 1}</td>
+        <td style="padding:6px 8px;font-weight:600;font-size:12px;vertical-align:top;">${item.name || ''}</td>
+        <td style="padding:6px 8px;text-align:center;font-size:12px;vertical-align:top;">${item.quantity || 1}</td>
+        <td style="padding:6px 8px;text-align:right;font-size:12px;vertical-align:top;">৳${Math.round(item.price || 0).toLocaleString()}</td>
+        <td style="padding:6px 8px;text-align:right;font-size:12px;font-weight:600;vertical-align:top;">৳${Math.round((item.price || 0) * (item.quantity || 1)).toLocaleString()}</td>
+      </tr>
+    `;
+
+    descLines.forEach((line: string, lineIdx: number) => {
+      const isLast = lineIdx === descLines.length - 1;
+      rowHtml += `
+        <tr class="item-desc-row" style="${isLast ? `border-bottom:1px solid ${border};` : ''}">
+          <td></td>
+          <td style="padding:1px 8px 3px 8px;color:${mutedForeground};font-size:10.5px;line-height:1.4;">${line}</td>
+          <td></td>
+          <td></td>
+          <td></td>
+        </tr>
+      `;
+    });
+
+    return rowHtml;
+  }).join('');
+
+  const deliveryCharge = Math.round(bill.deliveryCharge || 0);
+  const serviceFee = Math.round(bill.serviceFee || 0);
+  const discount = Math.round(bill.discount || 0);
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Money Receipt - ${invoiceId}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;600;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body {
+      font-family: 'Inter', 'Noto Sans Bengali', sans-serif;
+      margin: 0; padding: 0;
+      background: #f1f5f9;
+      color: ${foreground};
+      font-size: 12.5px;
+    }
+    .no-print {
+      position: sticky; top: 0; z-index: 999;
+      background: #fff; border-bottom: 1px solid ${border};
+      padding: 10px 24px;
+      display: flex; justify-content: space-between; align-items: center;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+    }
+    .no-print h3 { margin: 0; font-size: 15px; color: ${foreground}; }
+    .no-print button {
+      padding: 7px 20px; border-radius: 6px; border: none;
+      background: ${primary}; color: ${primaryForeground};
+      font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .page-wrap { padding: 28px 0 40px 0; }
+    .receipt-card {
+      width: 190mm;
+      margin: 0 auto;
+      background: #fff;
+      border: 1px solid ${border};
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    }
+
+    /* Header */
+    .receipt-header {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      padding: 18px 20px 14px 20px;
+      border-bottom: 3px solid ${primary};
+      background: linear-gradient(135deg, ${primary}12 0%, transparent 60%);
+    }
+
+    .brand-name { font-size: 15px; font-weight: 800; color: ${primary}; letter-spacing: 0.04em; text-transform: uppercase; }
+    .brand-sub { font-size: 10px; color: ${mutedForeground}; line-height: 1.4; margin-top: 2px; }
+    .receipt-title-block { text-align: right; }
+    .receipt-title { font-size: 26px; font-weight: 900; color: ${primary}; letter-spacing: -0.02em; text-transform: uppercase; margin: 0; }
+    .receipt-sub { font-size: 10px; color: ${mutedForeground}; margin-top: 2px; }
+    .receipt-meta { font-size: 11px; color: ${foreground}; margin-top: 6px; }
+    .receipt-meta span { font-weight: 700; }
+
+    /* Client & Bill Info */
+    .info-row {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 0; border-bottom: 1px solid ${border};
+    }
+    .info-block { padding: 12px 20px; }
+    .info-block + .info-block { border-left: 1px solid ${border}; }
+    .info-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: ${mutedForeground}; margin-bottom: 5px; }
+    .info-value { font-size: 13px; font-weight: 700; color: ${foreground}; }
+    .info-small { font-size: 10.5px; color: ${mutedForeground}; margin-top: 2px; }
+
+    /* Items Table */
+    .items-section { padding: 0 20px 12px 20px; }
+    .items-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: ${mutedForeground}; padding: 12px 0 6px 0; }
+    .items-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .items-table thead th {
+      background: ${primary}18;
+      color: ${mutedForeground};
+      font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+      padding: 6px 8px; text-align: left; border-bottom: 2px solid ${primary}40;
+    }
+    .items-table thead th:nth-child(3),
+    .items-table thead th:nth-child(4),
+    .items-table thead th:nth-child(5) { text-align: right; }
+    .item-desc-row td p { margin: 2px 0; }
+    .item-desc-row td ul { margin: 2px 0; padding-left: 16px; list-style: disc; }
+    .item-desc-row td ol { margin: 2px 0; padding-left: 16px; list-style: decimal; }
+    .item-desc-row td li { margin: 1px 0; }
+    .item-desc-row td blockquote { border-left: 2px solid ${border}; padding-left: 6px; margin: 2px 0; }
+
+    /* Totals */
+    .totals-block {
+      padding: 10px 20px 14px 20px;
+      border-top: 1px solid ${border};
+      display: flex; justify-content: flex-end;
+    }
+    .totals-table { width: 52%; border-collapse: collapse; }
+    .totals-table tr td { padding: 3px 0; font-size: 11.5px; }
+    .totals-table tr td:first-child { color: ${mutedForeground}; }
+    .totals-table tr td:last-child { text-align: right; font-weight: 600; color: ${foreground}; }
+    .totals-table .divider td { border-top: 1px solid ${border}; padding-top: 6px; margin-top: 4px; }
+    .totals-table .grand-total td { font-size: 13px; font-weight: 800; color: ${primary}; padding-top: 4px; }
+
+    /* Payment Banner */
+    .payment-banner {
+      margin: 0 20px 16px 20px;
+      background: ${primary};
+      color: ${primaryForeground};
+      border-radius: 8px;
+      padding: 12px 18px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .payment-banner .left-side .label { font-size: 10px; font-weight: 600; opacity: 0.85; text-transform: uppercase; letter-spacing: 0.06em; }
+    .payment-banner .left-side .amount { font-size: 22px; font-weight: 900; letter-spacing: -0.02em; margin-top: 2px; }
+    .payment-banner .left-side .words { font-size: 9.5px; opacity: 0.8; margin-top: 3px; }
+    .payment-banner .right-side { text-align: right; }
+    .payment-banner .right-side .due-label { font-size: 9px; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.06em; }
+    .payment-banner .right-side .due-amount { font-size: 16px; font-weight: 800; margin-top: 2px; }
+    .due-zero { opacity: 0.7; }
+
+    /* Footer */
+    .receipt-footer {
+      padding: 10px 20px 14px 20px;
+      border-top: 1px solid ${border};
+      display: flex; justify-content: space-between; align-items: flex-end;
+      font-size: 10px; color: ${mutedForeground};
+    }
+    .sig-line { width: 130px; border-top: 1.5px solid ${foreground}; padding-top: 4px; text-align: center; font-size: 10px; color: ${foreground}; margin-top: 30px; }
+    .stamp-circle {
+      width: 70px; height: 70px; border-radius: 50%;
+      border: 2px dashed ${primary}60;
+      display: flex; align-items: center; justify-content: center;
+      color: ${primary}80; font-size: 9px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.05em; text-align: center;
+    }
+    .watermark {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-35deg);
+      font-size: 56px; font-weight: 900; opacity: 0.045;
+      color: ${primary}; text-transform: uppercase; letter-spacing: 0.1em;
+      pointer-events: none; white-space: nowrap; z-index: 0;
+    }
+
+    @media print {
+      @page {
+        size: auto;
+        margin: 8mm 8mm 8mm 8mm;
+      }
+      .no-print { display: none !important; }
+      body { background: #fff !important; }
+      .page-wrap { padding: 0 !important; }
+      .receipt-card {
+        box-shadow: none !important;
+        border: none !important;
+        width: 100% !important;
+        border-radius: 0 !important;
+        overflow: visible !important;
+        page-break-inside: auto !important;
+      }
+      .items-table thead {
+        display: table-header-group;
+      }
+      tr {
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+      .payment-banner, .receipt-footer, .totals-block, .info-row, .receipt-header {
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print">
+    <h3>Money / Payment Receipt</h3>
+    <button onclick="window.print()">Print Receipt</button>
+  </div>
+
+  <div class="page-wrap">
+    <div class="receipt-card" style="position:relative;">
+      <div class="watermark">Receipt</div>
+
+      <!-- Header -->
+      <div class="receipt-header">
+        <div>
+          <div class="brand-name">${brandName}</div>
+          <div class="brand-sub">
+            ${brandAddress ? brandAddress + '<br>' : ''}
+            ${brandPhone ? 'Phone: ' + brandPhone : ''} ${brandPhone && brandEmail ? '&nbsp;|&nbsp; ' : ''}${brandEmail ? 'Email: ' + brandEmail : ''}
+          </div>
+        </div>
+        <div class="receipt-title-block">
+          <div class="receipt-title">Money Receipt</div>
+          <div class="receipt-sub">Payment Acknowledgement</div>
+          <div class="receipt-meta">
+            Bill No: <span>${invoiceId}</span><br>
+            Bill Date: <span>${formattedDate}</span><br>
+            Receipt Date: <span>${receiptDate}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Client & Bill Info -->
+      <div class="info-row">
+        <div class="info-block">
+          <div class="info-label">Received From</div>
+          <div class="info-value">${bill.clientName || 'N/A'}</div>
+          ${bill.clientPhone ? `<div class="info-small">Phone: ${bill.clientPhone}</div>` : ''}
+          ${bill.clientEmail ? `<div class="info-small">Email: ${bill.clientEmail}</div>` : ''}
+          ${bill.clientAddress ? `<div class="info-small">Address: ${bill.clientAddress}</div>` : ''}
+        </div>
+        <div class="info-block">
+          <div class="info-label">Bill Summary</div>
+          <div class="info-small">Subtotal: <strong>৳${Math.round(bill.subtotal || 0).toLocaleString()}</strong></div>
+          ${deliveryCharge > 0 ? `<div class="info-small">Delivery: <strong>৳${deliveryCharge.toLocaleString()}</strong></div>` : ''}
+          ${serviceFee > 0 ? `<div class="info-small">Service Fee: <strong>৳${serviceFee.toLocaleString()}</strong></div>` : ''}
+          ${discount > 0 ? `<div class="info-small">Discount: <strong style="color:#ef4444;">-৳${discount.toLocaleString()}</strong></div>` : ''}
+          ${prevDue > 0 ? `<div class="info-small">Previous Due: <strong>৳${prevDue.toLocaleString()}</strong></div>` : ''}
+          <div class="info-value" style="margin-top:6px;">Grand Total: ৳${grandTotal.toLocaleString()}</div>
+        </div>
+      </div>
+
+      <!-- Items -->
+      ${items.length > 0 ? `
+      <div class="items-section">
+        <div class="items-label">Items / Services</div>
+        <table class="items-table">
+          <thead>
+            <tr>
+              <th style="width:30px;">#</th>
+              <th>Description</th>
+              <th style="width:50px;text-align:center;">Qty</th>
+              <th style="width:80px;text-align:right;">Unit Price</th>
+              <th style="width:90px;text-align:right;">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemRows}
+          </tbody>
+        </table>
+      </div>
+      ` : ''}
+
+      <!-- Payment Banner -->
+      <div class="payment-banner">
+        <div class="left-side">
+          <div class="label">Amount Received</div>
+          <div class="amount">৳${amountReceived.toLocaleString()}</div>
+          <div class="words">${amountInWords} Taka Only</div>
+        </div>
+        <div class="right-side">
+          ${remainingDue <= 0
+            ? `<div class="due-label">Status</div><div class="due-amount due-zero">Fully Paid</div>`
+            : `<div class="due-label">Remaining Due</div><div class="due-amount">৳${remainingDue.toLocaleString()}</div>`
+          }
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="receipt-footer">
+        <div>
+          <div class="sig-line">Received By</div>
+        </div>
+        <div style="text-align:center;">
+          <div class="stamp-circle">Official<br>Seal</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="sig-line">Client Signature</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(function() { setTimeout(function() {}, 200); });
+    }
+  </script>
+</body>
+</html>`;
+
+  const printWindow = window.open('', '_blank');
+  if (printWindow) {
+    printWindow.document.open();
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  } else {
+    toast.error('Pop-up was blocked. Please allow pop-ups for this website to print receipts.');
   }
 }

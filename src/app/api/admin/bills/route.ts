@@ -12,10 +12,19 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
+    const invoiceNo = searchParams.get('invoiceNo');
     const filter = searchParams.get('filter'); // 'all', 'paid', 'due'
     const type = searchParams.get('type') || 'bill'; // 'offer', 'chalan', 'bill'
 
     await connectToDatabase();
+
+    if (invoiceNo) {
+      const singleBill = await Bill.findOne({ invoiceNo });
+      if (!singleBill) {
+        return NextResponse.json({ message: 'Bill not found' }, { status: 404 });
+      }
+      return NextResponse.json(singleBill);
+    }
 
     const query: any = {};
     if (type === 'bill') {

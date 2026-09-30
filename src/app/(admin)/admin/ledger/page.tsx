@@ -35,12 +35,14 @@ import {
   Landmark,
   Edit2,
   Trash2,
-  MoreHorizontal
+  MoreHorizontal,
+  Receipt
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
 import { Pagination } from '@/components/ui/pagination';
+import { generatePaymentReceiptPDF } from '@/lib/bill-invoice-generator';
 
 function AccountsLedgerContent() {
   const router = useRouter();
@@ -50,6 +52,8 @@ function AccountsLedgerContent() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [journalSearchTerm, setJournalSearchTerm] = useState('');
+  const [settings, setSettings] = useState<any>(null);
+  const [printingReceipt, setPrintingReceipt] = useState<string | null>(null);
   
   const initialPage = Math.max(1, parseInt(searchParams.get('page') || '1'));
   const [currentPage, setCurrentPage] = useState(initialPage);
@@ -104,7 +108,35 @@ function AccountsLedgerContent() {
   useEffect(() => {
     fetchAccounts();
     fetchTransactions();
+    fetchSettings();
   }, []);
+
+  const fetchSettings = async () => {
+    try {
+      const res = await fetch('/api/settings');
+      if (res.ok) {
+        const data = await res.json();
+        setSettings(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch settings:', err);
+    }
+  };
+
+  const handlePrintReceipt = async (invoiceNo: string) => {
+    if (!invoiceNo || !invoiceNo.startsWith('INV-')) return;
+    try {
+      setPrintingReceipt(invoiceNo);
+      const res = await fetch(`/api/admin/bills?invoiceNo=${invoiceNo}`);
+      if (!res.ok) throw new Error('Bill not found');
+      const bill = await res.json();
+      generatePaymentReceiptPDF(bill, settings);
+    } catch (err) {
+      toast.error('Could not load bill details for receipt');
+    } finally {
+      setPrintingReceipt(null);
+    }
+  };
 
   const fetchAccounts = async () => {
     try {
@@ -508,6 +540,20 @@ function AccountsLedgerContent() {
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </div>
+                        ) : tx.reference && tx.reference.startsWith('INV-') ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                            disabled={printingReceipt === tx.reference}
+                            onClick={() => handlePrintReceipt(tx.reference)}
+                          >
+                            {printingReceipt === tx.reference
+                              ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                              : <Receipt className="h-3.5 w-3.5 mr-1" />
+                            }
+                            Receipt
+                          </Button>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}

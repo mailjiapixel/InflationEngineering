@@ -44,7 +44,7 @@ import {
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
-import { generateBillPDF, generateDescriptionHtml } from '@/lib/bill-invoice-generator';
+import { generateBillPDF, generateDescriptionHtml, generatePaymentReceiptPDF } from '@/lib/bill-invoice-generator';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -798,6 +798,9 @@ function ClientBillsContent() {
                           <DropdownMenuItem onClick={() => generateBillPDF(bill, settings, 'print')}>
                             <Printer className="mr-2 h-4 w-4 text-teal-600" /> Print Bill
                           </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => generatePaymentReceiptPDF(bill, settings)}>
+                            <CreditCard className="mr-2 h-4 w-4 text-emerald-600" /> Print Receipt
+                          </DropdownMenuItem>
                           {bill.status === 'Due' && (
                             <DropdownMenuItem onClick={() => handleUpdateStatus(bill._id, bill.currentBillDue)}>
                               <CreditCard className="mr-2 h-4 w-4 text-green-600" /> Collect Cash
@@ -1432,7 +1435,14 @@ function ClientBillsContent() {
                     className="flex-1 font-bold"
                     onClick={() => generateBillPDF(selectedBill, settings, 'print')}
                   >
-                    <Printer className="h-4 w-4 mr-2" /> Print
+                    <Printer className="h-4 w-4 mr-2" /> Print Bill
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="flex-1 font-bold text-emerald-600 border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+                    onClick={() => generatePaymentReceiptPDF(selectedBill, settings)}
+                  >
+                    <CreditCard className="h-4 w-4 mr-2" /> Print Receipt
                   </Button>
                 </div>
               </div>

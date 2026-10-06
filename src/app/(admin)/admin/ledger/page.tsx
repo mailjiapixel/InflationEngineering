@@ -123,14 +123,14 @@ function AccountsLedgerContent() {
     }
   };
 
-  const handlePrintReceipt = async (invoiceNo: string) => {
+  const handlePrintReceipt = async (invoiceNo: string, paymentAmount?: number, txDate?: string | Date, txId?: string) => {
     if (!invoiceNo || !invoiceNo.startsWith('INV-')) return;
     try {
-      setPrintingReceipt(invoiceNo);
+      setPrintingReceipt(txId || invoiceNo);
       const res = await fetch(`/api/admin/bills?invoiceNo=${invoiceNo}`);
       if (!res.ok) throw new Error('Bill not found');
       const bill = await res.json();
-      generatePaymentReceiptPDF(bill, settings);
+      generatePaymentReceiptPDF(bill, settings, paymentAmount, txDate);
     } catch (err) {
       toast.error('Could not load bill details for receipt');
     } finally {
@@ -545,10 +545,10 @@ function AccountsLedgerContent() {
                             variant="ghost"
                             size="sm"
                             className="h-7 px-2 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
-                            disabled={printingReceipt === tx.reference}
-                            onClick={() => handlePrintReceipt(tx.reference)}
+                            disabled={printingReceipt === (tx._id || tx.reference)}
+                            onClick={() => handlePrintReceipt(tx.reference, tx.amount, tx.date, tx._id)}
                           >
-                            {printingReceipt === tx.reference
+                            {printingReceipt === (tx._id || tx.reference)
                               ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
                               : <Receipt className="h-3.5 w-3.5 mr-1" />
                             }

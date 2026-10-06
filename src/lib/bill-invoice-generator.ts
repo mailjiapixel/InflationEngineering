@@ -960,7 +960,7 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
  * Shows client info, purchased items, grand total, amount received this payment,
  * and remaining due balance.
  */
-export async function generatePaymentReceiptPDF(bill: any, settings: any, paymentAmount?: number) {
+export async function generatePaymentReceiptPDF(bill: any, settings: any, paymentAmount?: number, customReceiptDate?: string | Date) {
   const brandName = settings?.brandName || 'Inflation Engineering';
   const brandEmail = settings?.contact?.email || '';
   const brandPhone = settings?.contact?.phone || '';
@@ -991,7 +991,8 @@ export async function generatePaymentReceiptPDF(bill: any, settings: any, paymen
   const invoiceId = String(bill.invoiceNo || bill._id || '').toUpperCase();
   const billDate = bill.date ? new Date(bill.date) : new Date();
   const formattedDate = isValid(billDate) ? format(billDate, 'dd MMM yyyy') : 'N/A';
-  const receiptDate = format(new Date(), 'dd MMM yyyy');
+  const parsedReceiptDate = customReceiptDate ? new Date(customReceiptDate) : new Date();
+  const receiptDate = isValid(parsedReceiptDate) ? format(parsedReceiptDate, 'dd MMM yyyy') : format(new Date(), 'dd MMM yyyy');
 
   const items: any[] = Array.isArray(bill.items) ? bill.items : [];
   const grandTotal = Math.round(bill.gTotal || bill.total || 0);
@@ -999,7 +1000,7 @@ export async function generatePaymentReceiptPDF(bill: any, settings: any, paymen
   const billTotal = Math.round(bill.total || 0);
   // paymentAmount = how much was received in this session; if not provided, use bill.cashIn
   const amountReceived = Math.round(paymentAmount !== undefined ? paymentAmount : (bill.cashIn || 0));
-  const remainingDue = Math.max(0, Math.round(bill.currentBillDue !== undefined ? bill.currentBillDue : grandTotal - amountReceived));
+  const remainingDue = Math.max(0, Math.round(bill.currentBillDue !== undefined ? bill.currentBillDue : grandTotal - (bill.cashIn || amountReceived)));
 
   const amountInWords = numberToWords(amountReceived);
 
@@ -1251,6 +1252,7 @@ export async function generatePaymentReceiptPDF(bill: any, settings: any, paymen
           ${discount > 0 ? `<div class="info-small">Discount: <strong style="color:#ef4444;">-৳${discount.toLocaleString()}</strong></div>` : ''}
           ${prevDue > 0 ? `<div class="info-small">Previous Due: <strong>৳${prevDue.toLocaleString()}</strong></div>` : ''}
           <div class="info-value" style="margin-top:6px;">Grand Total: ৳${grandTotal.toLocaleString()}</div>
+          ${paymentAmount !== undefined && bill.cashIn && bill.cashIn !== amountReceived ? `<div class="info-small" style="margin-top:4px;">Total Paid: <strong>৳${Math.round(bill.cashIn).toLocaleString()}</strong></div>` : ''}
         </div>
       </div>
 

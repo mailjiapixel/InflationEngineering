@@ -89,14 +89,14 @@ function AccountsLedgerContent() {
     }
   };
 
-  const handlePrintReceipt = async (invoiceNo: string, paymentAmount?: number, txDate?: string | Date, txId?: string) => {
+  const handlePrintReceipt = async (invoiceNo: string, paymentAmount?: number, txDate?: string | Date, txId?: string, isInitialBill?: boolean) => {
     if (!invoiceNo || !invoiceNo.startsWith('INV-')) return;
     try {
       setPrintingReceipt(txId || invoiceNo);
       const res = await fetch(`/api/admin/bills?invoiceNo=${invoiceNo}`);
       if (!res.ok) throw new Error('Bill not found');
       const bill = await res.json();
-      generatePaymentReceiptPDF(bill, settings, paymentAmount, txDate);
+      generatePaymentReceiptPDF(bill, settings, paymentAmount, txDate, txId, isInitialBill);
     } catch (err) {
       toast.error('Could not load bill details for receipt');
     } finally {
@@ -338,25 +338,30 @@ function AccountsLedgerContent() {
                       <TableCell className="text-right font-semibold">৳{Math.round(tx.balanceAfter).toLocaleString()}</TableCell>
                       <TableCell className="text-right">
                         {tx.reference && tx.reference.startsWith('INV-') ? (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => handlePrintReceipt(tx.reference, tx.amount, tx.date, tx._id)}
-                              >
-                                {printingReceipt === tx._id ? (
-                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                ) : (
-                                  <Receipt className="mr-2 h-4 w-4 text-emerald-600" />
-                                )}
-                                Print Receipt
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          (() => {
+                            const isInitialBill = (tx.account?.code === 'AR' && tx.type === 'debit') || (tx.description && tx.description.toLowerCase().includes('bill generated'));
+                            return (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem
+                                    onClick={() => handlePrintReceipt(tx.reference, isInitialBill ? 0 : tx.amount, tx.date, tx._id, isInitialBill)}
+                                  >
+                                    {printingReceipt === tx._id ? (
+                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Receipt className="mr-2 h-4 w-4 text-emerald-600" />
+                                    )}
+                                    Print Receipt
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            );
+                          })()
                         ) : (
                           <span className="text-xs text-muted-foreground pr-3">—</span>
                         )}

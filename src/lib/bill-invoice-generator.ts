@@ -960,7 +960,14 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
  * Shows client info, purchased items, grand total, amount received this payment,
  * and remaining due balance.
  */
-export async function generatePaymentReceiptPDF(bill: any, settings: any, paymentAmount?: number, customReceiptDate?: string | Date) {
+export async function generatePaymentReceiptPDF(
+  bill: any,
+  settings: any,
+  paymentAmount?: number,
+  customReceiptDate?: string | Date,
+  txId?: string,
+  isInitialBill?: boolean
+) {
   const brandName = settings?.brandName || 'Inflation Engineering';
   const brandEmail = settings?.contact?.email || '';
   const brandPhone = settings?.contact?.phone || '';
@@ -987,7 +994,6 @@ export async function generatePaymentReceiptPDF(bill: any, settings: any, paymen
     foreground = getColor('--foreground', foreground);
   }
 
-
   const invoiceId = String(bill.invoiceNo || bill._id || '').toUpperCase();
   const billDate = bill.date ? new Date(bill.date) : new Date();
   const formattedDate = isValid(billDate) ? format(billDate, 'dd MMM yyyy') : 'N/A';
@@ -998,11 +1004,68 @@ export async function generatePaymentReceiptPDF(bill: any, settings: any, paymen
   const grandTotal = Math.round(bill.gTotal || bill.total || 0);
   const prevDue = Math.round(bill.prevDue || 0);
   const billTotal = Math.round(bill.total || 0);
-  // paymentAmount = how much was received in this session; if not provided, use bill.cashIn
-  const amountReceived = Math.round(paymentAmount !== undefined ? paymentAmount : (bill.cashIn || 0));
-  const remainingDue = Math.max(0, Math.round(bill.currentBillDue !== undefined ? bill.currentBillDue : grandTotal - (bill.cashIn || amountReceived)));
 
-  const amountInWords = numberToWords(amountReceived);
+  // Analyze payment history list if available
+  const payments: any[] = Array.isArray(bill.payments) ? bill.payments : [];
+
+  let thisPayment = 0;
+  let previouslyPaid = 0;
+  let totalPaid = 0;
+  let remainingDue = 0;
+
+  if (isInitialBill) {
+    // Initial stage when bill was created: 0 received, 100% full due
+    thisPayment = 0;
+    previouslyPaid = 0;
+    totalPaid = 0;
+    remainingDue = grandTotal;
+  } else if (payments.length > 0) {
+    // Attempt to locate target transaction by ID or by matching amount & date
+    let matchedIdx = -1;
+    if (txId) {
+      matchedIdx = payments.findIndex(p => p._id?.toString() === txId.toString());
+    }
+    if (matchedIdx === -1 && paymentAmount !== undefined && paymentAmount > 0) {
+      matchedIdx = payments.findIndex(p => Math.round(p.amount) === Math.round(paymentAmount));
+    }
+
+    if (matchedIdx !== -1) {
+      // All payments before this one
+      previouslyPaid = payments.slice(0, matchedIdx).reduce((acc, p) => acc + Math.round(p.amount || 0), 0);
+      thisPayment = Math.round(payments[matchedIdx].amount || thisPayment);
+      totalPaid = previouslyPaid + thisPayment;
+      remainingDue = Math.max(0, grandTotal - totalPaid);
+    } else {
+      // Fallback if not matched in array
+      thisPayment = Math.round(paymentAmount !== undefined ? paymentAmount : (bill.cashIn || 0));
+      totalPaid = Math.round(bill.cashIn || thisPayment);
+      previouslyPaid = Math.max(0, totalPaid - thisPayment);
+      remainingDue = Math.max(0, grandTotal - totalPaid);
+    }
+  } else {
+    // No payments list attached
+    if (paymentAmount !== undefined) {
+      thisPayment = Math.round(paymentAmount);
+      // If upfront payment (e.g. 20,000 on 30,000 bill)
+      if (thisPayment < grandTotal && (!bill.cashIn || bill.cashIn === thisPayment)) {
+        previouslyPaid = 0;
+        totalPaid = thisPayment;
+        remainingDue = Math.max(0, grandTotal - totalPaid);
+      } else {
+        totalPaid = Math.round(bill.cashIn || thisPayment);
+        previouslyPaid = Math.max(0, totalPaid - thisPayment);
+        remainingDue = Math.max(0, grandTotal - totalPaid);
+      }
+    } else {
+      thisPayment = Math.round(bill.cashIn || 0);
+      totalPaid = thisPayment;
+      previouslyPaid = 0;
+      remainingDue = Math.max(0, grandTotal - totalPaid);
+    }
+  }
+
+  const dueBeforePayment = Math.max(0, grandTotal - previouslyPaid);
+  const amountInWords = thisPayment > 0 ? `${numberToWords(thisPayment)} Taka Only` : 'Zero Taka (Initial Due Stage)';
 
   const itemRows = items.map((item: any, idx: number) => {
     const descLines = getDescriptionLines(item.description);
@@ -1080,18 +1143,13 @@ export async function generatePaymentReceiptPDF(bill: any, settings: any, paymen
     /* Header */
     .receipt-header {
       display: flex; justify-content: space-between; align-items: flex-start;
-      padding: 18px 20px 14px 20px;
+      padding: 16px 20px 12px 20px;
       border-bottom: 3px solid ${primary};
       background: linear-gradient(135deg, ${primary}12 0%, transparent 60%);
     }
 
     .brand-name { font-size: 15px; font-weight: 800; color: ${primary}; letter-spacing: 0.04em; text-transform: uppercase; }
     .brand-sub { font-size: 10px; color: ${mutedForeground}; line-height: 1.4; margin-top: 2px; }
-    .receipt-title-block { text-align: right; }
-    .receipt-title { font-size: 26px; font-weight: 900; color: ${primary}; letter-spacing: -0.02em; text-transform: uppercase; margin: 0; }
-    .receipt-sub { font-size: 10px; color: ${mutedForeground}; margin-top: 2px; }
-    .receipt-meta { font-size: 11px; color: ${foreground}; margin-top: 6px; }
-    .receipt-meta span { font-weight: 700; }
 
     /* Client & Bill Info */
     .info-row {
@@ -1104,8 +1162,13 @@ export async function generatePaymentReceiptPDF(bill: any, settings: any, paymen
     .info-value { font-size: 13px; font-weight: 700; color: ${foreground}; }
     .info-small { font-size: 10.5px; color: ${mutedForeground}; margin-top: 2px; }
 
+    .receipt-title { font-size: 20px; font-weight: 900; color: ${primary}; letter-spacing: -0.02em; text-transform: uppercase; margin: 0; }
+    .receipt-sub { font-size: 10px; color: ${mutedForeground}; margin-top: 1px; }
+    .receipt-meta { font-size: 11px; color: ${foreground}; margin-top: 5px; }
+    .receipt-meta span { font-weight: 700; }
+
     /* Items Table */
-    .items-section { padding: 0 20px 12px 20px; }
+    .items-section { padding: 0 20px 10px 20px; }
     .items-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: ${mutedForeground}; padding: 12px 0 6px 0; }
     .items-table { width: 100%; border-collapse: collapse; font-size: 12px; }
     .items-table thead th {
@@ -1124,17 +1187,17 @@ export async function generatePaymentReceiptPDF(bill: any, settings: any, paymen
     .item-desc-row td blockquote { border-left: 2px solid ${border}; padding-left: 6px; margin: 2px 0; }
 
     /* Totals */
-    .totals-block {
-      padding: 10px 20px 14px 20px;
-      border-top: 1px solid ${border};
+    .bill-summary-container {
       display: flex; justify-content: flex-end;
+      padding: 4px 20px 12px 20px;
     }
-    .totals-table { width: 52%; border-collapse: collapse; }
-    .totals-table tr td { padding: 3px 0; font-size: 11.5px; }
-    .totals-table tr td:first-child { color: ${mutedForeground}; }
-    .totals-table tr td:last-child { text-align: right; font-weight: 600; color: ${foreground}; }
-    .totals-table .divider td { border-top: 1px solid ${border}; padding-top: 6px; margin-top: 4px; }
-    .totals-table .grand-total td { font-size: 13px; font-weight: 800; color: ${primary}; padding-top: 4px; }
+    .bill-summary-box {
+      width: 270px;
+      border: 1px solid ${border};
+      border-radius: 6px;
+      padding: 8px 12px;
+      background: #fafafa;
+    }
 
     /* Payment Banner */
     .payment-banner {
@@ -1198,7 +1261,7 @@ export async function generatePaymentReceiptPDF(bill: any, settings: any, paymen
         page-break-inside: avoid;
         break-inside: avoid;
       }
-      .payment-banner, .receipt-footer, .totals-block, .info-row, .receipt-header {
+      .payment-banner, .receipt-footer, .bill-summary-container, .info-row, .receipt-header {
         page-break-inside: avoid;
         break-inside: avoid;
       }
@@ -1215,7 +1278,7 @@ export async function generatePaymentReceiptPDF(bill: any, settings: any, paymen
     <div class="receipt-card" style="position:relative;">
       <div class="watermark">Receipt</div>
 
-      <!-- Header -->
+      <!-- Header: Left Brand Info, Right Blank Space for Pad Logo -->
       <div class="receipt-header">
         <div>
           <div class="brand-name">${brandName}</div>
@@ -1224,19 +1287,24 @@ export async function generatePaymentReceiptPDF(bill: any, settings: any, paymen
             ${brandPhone ? 'Phone: ' + brandPhone : ''} ${brandPhone && brandEmail ? '&nbsp;|&nbsp; ' : ''}${brandEmail ? 'Email: ' + brandEmail : ''}
           </div>
         </div>
-        <div class="receipt-title-block">
+        <!-- Blank Top Right Corner for physical pad logo -->
+        <div style="min-width: 150px; min-height: 40px;"></div>
+      </div>
+
+      <!-- Info Row: Left = Money Receipt Meta, Right = Received From -->
+      <div class="info-row">
+        <!-- Left: Money Receipt Info -->
+        <div class="info-block">
           <div class="receipt-title">Money Receipt</div>
           <div class="receipt-sub">Payment Acknowledgement</div>
           <div class="receipt-meta">
-            Bill No: <span>${invoiceId}</span><br>
-            Bill Date: <span>${formattedDate}</span><br>
-            Receipt Date: <span>${receiptDate}</span>
+            <div>Bill No: <span>${invoiceId}</span></div>
+            <div>Bill Date: <span>${formattedDate}</span></div>
+            <div>Receipt Date: <span>${receiptDate}</span></div>
           </div>
         </div>
-      </div>
 
-      <!-- Client & Bill Info -->
-      <div class="info-row">
+        <!-- Right: Received From -->
         <div class="info-block">
           <div class="info-label">Received From</div>
           <div class="info-value">${bill.clientName || 'N/A'}</div>
@@ -1244,19 +1312,9 @@ export async function generatePaymentReceiptPDF(bill: any, settings: any, paymen
           ${bill.clientEmail ? `<div class="info-small">Email: ${bill.clientEmail}</div>` : ''}
           ${bill.clientAddress ? `<div class="info-small">Address: ${bill.clientAddress}</div>` : ''}
         </div>
-        <div class="info-block">
-          <div class="info-label">Bill Summary</div>
-          <div class="info-small">Subtotal: <strong>৳${Math.round(bill.subtotal || 0).toLocaleString()}</strong></div>
-          ${deliveryCharge > 0 ? `<div class="info-small">Delivery: <strong>৳${deliveryCharge.toLocaleString()}</strong></div>` : ''}
-          ${serviceFee > 0 ? `<div class="info-small">Service Fee: <strong>৳${serviceFee.toLocaleString()}</strong></div>` : ''}
-          ${discount > 0 ? `<div class="info-small">Discount: <strong style="color:#ef4444;">-৳${discount.toLocaleString()}</strong></div>` : ''}
-          ${prevDue > 0 ? `<div class="info-small">Previous Due: <strong>৳${prevDue.toLocaleString()}</strong></div>` : ''}
-          <div class="info-value" style="margin-top:6px;">Grand Total: ৳${grandTotal.toLocaleString()}</div>
-          ${paymentAmount !== undefined && bill.cashIn && bill.cashIn !== amountReceived ? `<div class="info-small" style="margin-top:4px;">Total Paid: <strong>৳${Math.round(bill.cashIn).toLocaleString()}</strong></div>` : ''}
-        </div>
       </div>
 
-      <!-- Items -->
+      <!-- Items Section -->
       ${items.length > 0 ? `
       <div class="items-section">
         <div class="items-label">Items / Services</div>
@@ -1277,12 +1335,70 @@ export async function generatePaymentReceiptPDF(bill: any, settings: any, paymen
       </div>
       ` : ''}
 
+      <!-- Bill Summary: Under Item Table Right Corner -->
+      <div class="bill-summary-container">
+        <div class="bill-summary-box">
+          <div class="info-label" style="margin-bottom: 5px; border-bottom: 1px solid ${border}; padding-bottom: 3px;">Bill Summary</div>
+          <div style="display: flex; justify-content: space-between; font-size: 11.5px; padding: 2px 0;">
+            <span style="color: ${mutedForeground};">Subtotal:</span>
+            <strong>৳${Math.round(bill.subtotal || 0).toLocaleString()}</strong>
+          </div>
+          ${deliveryCharge > 0 ? `
+          <div style="display: flex; justify-content: space-between; font-size: 11.5px; padding: 2px 0;">
+            <span style="color: ${mutedForeground};">Delivery:</span>
+            <strong>৳${deliveryCharge.toLocaleString()}</strong>
+          </div>` : ''}
+          ${serviceFee > 0 ? `
+          <div style="display: flex; justify-content: space-between; font-size: 11.5px; padding: 2px 0;">
+            <span style="color: ${mutedForeground};">Service Fee:</span>
+            <strong>৳${serviceFee.toLocaleString()}</strong>
+          </div>` : ''}
+          ${discount > 0 ? `
+          <div style="display: flex; justify-content: space-between; font-size: 11.5px; padding: 2px 0;">
+            <span style="color: ${mutedForeground};">Discount:</span>
+            <strong style="color: #ef4444;">-৳${discount.toLocaleString()}</strong>
+          </div>` : ''}
+          ${prevDue > 0 ? `
+          <div style="display: flex; justify-content: space-between; font-size: 11.5px; padding: 2px 0;">
+            <span style="color: ${mutedForeground};">Previous Due:</span>
+            <strong>৳${prevDue.toLocaleString()}</strong>
+          </div>` : ''}
+          <div style="display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 700; color: ${primary}; border-top: 1px solid ${border}; margin-top: 4px; padding-top: 4px;">
+            <span>Grand Total:</span>
+            <span>৳${grandTotal.toLocaleString()}</span>
+          </div>
+          ${previouslyPaid > 0 ? `
+          <div style="display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0; color: #475569;">
+            <span>Previously Paid:</span>
+            <strong>৳${previouslyPaid.toLocaleString()}</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0; color: #dc2626;">
+            <span>Due Before Payment:</span>
+            <strong>৳${dueBeforePayment.toLocaleString()}</strong>
+          </div>` : ''}
+          <div style="display: flex; justify-content: space-between; font-size: 11.5px; padding: 2px 0; border-top: 1px dashed ${border}; margin-top: 3px; padding-top: 3px;">
+            <span style="color: ${primary}; font-weight: 600;">This Payment Received:</span>
+            <strong style="color: ${primary};">৳${thisPayment.toLocaleString()}</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0;">
+            <span style="color: ${mutedForeground};">Total Paid To Date:</span>
+            <strong>৳${totalPaid.toLocaleString()}</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 11.5px; padding: 2px 0; border-top: 1px solid ${border}; margin-top: 3px; padding-top: 3px;">
+            <span style="font-weight: 600;">Remaining Due:</span>
+            <strong style="${remainingDue === 0 ? 'color: #10b981;' : 'color: #ef4444;'}">
+              ${remainingDue === 0 ? '৳0 (Fully Paid)' : `৳${remainingDue.toLocaleString()}`}
+            </strong>
+          </div>
+        </div>
+      </div>
+
       <!-- Payment Banner -->
       <div class="payment-banner">
         <div class="left-side">
-          <div class="label">Amount Received</div>
-          <div class="amount">৳${amountReceived.toLocaleString()}</div>
-          <div class="words">${amountInWords} Taka Only</div>
+          <div class="label">Amount Received (This Receipt)</div>
+          <div class="amount">৳${thisPayment.toLocaleString()}</div>
+          <div class="words">${amountInWords}</div>
         </div>
         <div class="right-side">
           ${remainingDue <= 0

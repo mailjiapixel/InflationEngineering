@@ -117,7 +117,7 @@ function ExpensesIncomesContent() {
       const res = await fetch(`/api/admin/bills?invoiceNo=${invoiceNo}`);
       if (!res.ok) throw new Error('Bill not found');
       const bill = await res.json();
-      generatePaymentReceiptPDF(bill, settings, amount, txDate);
+      generatePaymentReceiptPDF(bill, settings, amount, txDate, txId);
     } catch (err) {
       toast.error('Could not load bill receipt');
     } finally {

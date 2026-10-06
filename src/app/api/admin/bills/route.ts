@@ -19,10 +19,28 @@ export async function GET(req: NextRequest) {
     await connectToDatabase();
 
     if (invoiceNo) {
-      const singleBill = await Bill.findOne({ invoiceNo });
+      const singleBill = await Bill.findOne({ invoiceNo }).lean();
       if (!singleBill) {
         return NextResponse.json({ message: 'Bill not found' }, { status: 404 });
       }
+
+      // Fetch payment transactions for this bill
+      try {
+        const LedgerAccount = (await import('@/models/LedgerAccount')).default;
+        const LedgerTransaction = (await import('@/models/LedgerTransaction')).default;
+        const arAccount = await LedgerAccount.findOne({ code: 'AR' });
+        if (arAccount) {
+          const payments = await LedgerTransaction.find({
+            account: arAccount._id,
+            reference: invoiceNo,
+            type: 'credit'
+          }).sort({ date: 1, createdAt: 1 }).lean();
+          (singleBill as any).payments = payments;
+        }
+      } catch (err) {
+        console.error('Error attaching payments to bill:', err);
+      }
+
       return NextResponse.json(singleBill);
     }
 

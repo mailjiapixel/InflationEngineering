@@ -3,10 +3,14 @@ import mongoose, { Document, Model, Schema } from 'mongoose';
 export interface IExpense extends Document {
   title: string;
   amount: number;
-  category: 'Ads' | 'Salary' | 'Rent' | 'Utility' | 'Sales' | 'Investment' | 'Service' | 'Others';
+  category: string;
   type: 'expense' | 'income';
   date: Date;
   description?: string;
+  reference?: string;
+  bill?: mongoose.Types.ObjectId | string;
+  invoiceNo?: string;
+  accountCode?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -18,7 +22,6 @@ const ExpenseSchema: Schema<IExpense> = new Schema(
     category: {
       type: String,
       required: true,
-      enum: ['Ads', 'Salary', 'Rent', 'Utility', 'Sales', 'Investment', 'Service', 'Others'],
       default: 'Others',
     },
     type: {
@@ -29,6 +32,10 @@ const ExpenseSchema: Schema<IExpense> = new Schema(
     },
     date: { type: Date, required: true, default: Date.now },
     description: { type: String },
+    reference: { type: String },
+    bill: { type: Schema.Types.ObjectId, ref: 'Bill' },
+    invoiceNo: { type: String },
+    accountCode: { type: String, default: 'CASH' },
   },
   { timestamps: true }
 );
@@ -36,4 +43,3 @@ const ExpenseSchema: Schema<IExpense> = new Schema(
 const Expense: Model<IExpense> = mongoose.models.Expense || mongoose.model<IExpense>('Expense', ExpenseSchema);
 
 export default Expense;
-

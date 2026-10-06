@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Plus, Trash, Edit, Search, MoreHorizontal, Loader2 } from 'lucide-react';
+import Link from 'next/link';
+import { Plus, Trash, Edit, Search, MoreHorizontal, Loader2, Receipt, Tags } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -18,7 +19,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import { TransactionForm } from '@/components/admin/TransactionForm';
 import { format } from 'date-fns';
@@ -39,15 +39,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { generatePaymentReceiptPDF } from '@/lib/bill-invoice-generator';
 
 function ExpensesIncomesContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [settings, setSettings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<any>(null);
+  const [printingReceipt, setPrintingReceipt] = useState<string | null>(null);
   
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -57,6 +60,14 @@ function ExpensesIncomesContent() {
   
   const initialPage = Math.max(1, parseInt(searchParams.get('page') || '1'));
   const [currentPage, setCurrentPage] = useState(initialPage);
+
+  // Fetch store settings
+  useEffect(() => {
+    fetch('/api/settings')
+      .then(res => res.json())
+      .then(data => setSettings(data))
+      .catch(err => console.error('Failed to load settings:', err));
+  }, []);
 
   // Sync state changes to URL query parameters
   useEffect(() => {
@@ -100,10 +111,24 @@ function ExpensesIncomesContent() {
     fetchTransactions();
   }, []);
 
+  const handlePrintReceipt = async (invoiceNo: string, amount: number, txDate: string, txId: string) => {
+    try {
+      setPrintingReceipt(txId);
+      const res = await fetch(`/api/admin/bills?invoiceNo=${invoiceNo}`);
+      if (!res.ok) throw new Error('Bill not found');
+      const bill = await res.json();
+      generatePaymentReceiptPDF(bill, settings, amount, txDate);
+    } catch (err) {
+      toast.error('Could not load bill receipt');
+    } finally {
+      setPrintingReceipt(null);
+    }
+  };
+
   const handleDelete = async (id: string) => {
     const result = await Swal.fire({
       title: 'Delete Transaction?',
-      text: 'Are you sure you want to delete this transaction record?',
+      text: 'Are you sure you want to delete this transaction record? If it was a client bill collection, the bill balance will be automatically adjusted.',
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#ef4444',
@@ -128,7 +153,10 @@ function ExpensesIncomesContent() {
   const filteredTransactions = transactions.filter((tx) => {
     const term = searchTerm.toLowerCase();
     const title = tx.title?.toLowerCase() || '';
-    const matchesSearch = title.includes(term);
+    const cat = tx.category?.toLowerCase() || '';
+    const inv = tx.invoiceNo?.toLowerCase() || '';
+    const ref = tx.reference?.toLowerCase() || '';
+    const matchesSearch = title.includes(term) || cat.includes(term) || inv.includes(term) || ref.includes(term);
 
     let matchesDate = true;
     if (dateFilter.from) {
@@ -156,7 +184,8 @@ function ExpensesIncomesContent() {
   const overviewTransactions = transactions.filter((tx) => {
     const term = searchTerm.toLowerCase();
     const title = tx.title?.toLowerCase() || '';
-    const matchesSearch = title.includes(term);
+    const cat = tx.category?.toLowerCase() || '';
+    const matchesSearch = title.includes(term) || cat.includes(term);
 
     let matchesDate = true;
     if (dateFilter.from) {
@@ -181,31 +210,45 @@ function ExpensesIncomesContent() {
 
   return (
     <div className="space-y-6 px-[2px] md:px-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight font-heading">Expenses & Incomes</h1>
-          <p className="text-muted-foreground text-sm">Track ads, rent, salary, sales, investments, and other costs or revenues.</p>
+          <p className="text-muted-foreground text-sm">Track client bill receipts, sales, investments, ads, rent, salary, and overhead costs.</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger render={<Button onClick={() => setEditingTransaction(null)} />}>
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <Button variant="outline" asChild className="w-full sm:w-auto">
+            <Link href="/admin/expenses-incomes/categories">
+              <Tags className="mr-2 h-4 w-4" /> Categories
+            </Link>
+          </Button>
+          <Button
+            onClick={() => {
+              setEditingTransaction(null);
+              setIsDialogOpen(true);
+            }}
+            className="bg-primary text-primary-foreground font-bold w-full sm:w-auto"
+          >
             <Plus className="mr-2 h-4 w-4" /> Add Record
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[480px] w-full">
-            <DialogHeader>
-              <DialogTitle>{editingTransaction ? 'Edit' : 'Add'} Transaction</DialogTitle>
-            </DialogHeader>
-            <TransactionForm
-              initialData={editingTransaction}
-              onSuccess={(wasEdit) => {
-                if (wasEdit) {
-                  setIsDialogOpen(false);
-                }
-                fetchTransactions();
-              }}
-            />
-          </DialogContent>
-        </Dialog>
+          </Button>
+        </div>
       </div>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-[500px] w-full max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingTransaction ? 'Edit' : 'Add'} Transaction</DialogTitle>
+          </DialogHeader>
+          <TransactionForm
+            initialData={editingTransaction}
+            onSuccess={(wasEdit) => {
+              if (wasEdit) {
+                setIsDialogOpen(false);
+              }
+              fetchTransactions();
+            }}
+          />
+        </DialogContent>
+      </Dialog>
 
       {/* Overview Cards */}
       <div className="grid gap-4 md:grid-cols-2">
@@ -247,7 +290,7 @@ function ExpensesIncomesContent() {
             <div className="relative w-full sm:w-64">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search title..."
+                placeholder="Search title, category, invoice..."
                 className="pl-8"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -302,7 +345,7 @@ function ExpensesIncomesContent() {
             <TableHeader>
               <TableRow>
                 <TableHead>Date</TableHead>
-                <TableHead>Title</TableHead>
+                <TableHead>Title & Category</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead className="text-right">Amount (Tk)</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -327,16 +370,33 @@ function ExpensesIncomesContent() {
               ) : (
                 paginatedTransactions.map((tx) => {
                   const isExpense = (tx.type || 'expense') === 'expense';
+                  const hasBillInvoice = tx.invoiceNo || (tx.reference && tx.reference.startsWith('INV-'));
+                  const invoiceNumber = tx.invoiceNo || tx.reference;
+
                   return (
                     <TableRow key={tx._id}>
-                      <TableCell>{format(new Date(tx.date), 'dd MMM yyyy')}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                        {format(new Date(tx.date), 'dd MMM yyyy')}
+                      </TableCell>
                       <TableCell>
-                        <div className="font-medium">{tx.title}</div>
-                        {tx.description && (
-                          <div className="text-xs text-muted-foreground mt-0.5 max-w-[300px] break-words">
-                            {tx.description}
-                          </div>
-                        )}
+                        <div className="font-medium flex items-center gap-1.5">
+                          {tx.title}
+                          {invoiceNumber && (
+                            <span className="text-[10px] uppercase font-bold bg-primary/15 text-primary px-1.5 py-0.5 rounded">
+                              {invoiceNumber}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[11px] text-muted-foreground font-semibold bg-muted px-1.5 py-0.5 rounded">
+                            {tx.category || 'General'}
+                          </span>
+                          {tx.description && (
+                            <span className="text-xs text-muted-foreground truncate max-w-[280px]">
+                              • {tx.description}
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         {isExpense ? (
@@ -360,13 +420,25 @@ function ExpensesIncomesContent() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            {hasBillInvoice && (
+                              <DropdownMenuItem
+                                onClick={() => handlePrintReceipt(invoiceNumber, tx.amount, tx.date, tx._id)}
+                              >
+                                {printingReceipt === tx._id ? (
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Receipt className="mr-2 h-4 w-4 text-emerald-600" />
+                                )}
+                                Print Receipt
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem
                               onClick={() => {
                                 setEditingTransaction(tx);
                                 setIsDialogOpen(true);
                               }}
                             >
-                              <Edit className="mr-2 h-4 w-4" /> Edit
+                              <Edit className="mr-2 h-4 w-4 text-indigo-600" /> Edit
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"

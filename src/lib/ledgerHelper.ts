@@ -143,3 +143,162 @@ export async function logOrderPaymentToLedger(order: any) {
     console.error('[Ledger] Error logging order payment to ledger:', error);
   }
 }
+
+/**
+ * Sync active bills to ledger: ensures Bill Generated AR debit entry and upfront cash entries exist.
+ */
+export async function syncBillsToLedger() {
+  try {
+    await connectToDatabase();
+    const Bill = (await import('@/models/Bill')).default;
+    const LedgerAccount = (await import('@/models/LedgerAccount')).default;
+    const arAccount = await LedgerAccount.findOne({ code: 'AR' });
+    const cashAccount = await LedgerAccount.findOne({ code: 'CASH' });
+
+    if (!arAccount || !cashAccount) return;
+
+    const bills = await Bill.find({
+      $or: [{ documentType: 'bill' }, { documentType: { $exists: false } }]
+    });
+
+    for (const bill of bills) {
+      if (!bill.invoiceNo) continue;
+
+      // 1. Check AR Debit entry for Bill Generated
+      const billDebitExists = await LedgerTransaction.findOne({
+        account: arAccount._id,
+        reference: bill.invoiceNo,
+        type: 'debit'
+      });
+
+      if (!billDebitExists && bill.gTotal > 0) {
+        await logLedgerTransaction(
+          'AR',
+          'debit',
+          bill.gTotal,
+          `Bill Generated for ${bill.clientName}`,
+          bill.invoiceNo,
+          bill.createdAt ? new Date(bill.createdAt) : new Date()
+        );
+      }
+
+      // 2. Check Upfront payment if cashIn > 0
+      if (bill.cashIn > 0) {
+        const cashDebitExists = await LedgerTransaction.findOne({
+          account: cashAccount._id,
+          reference: bill.invoiceNo,
+          type: 'debit'
+        });
+
+        if (!cashDebitExists) {
+          await logLedgerTransaction(
+            'CASH',
+            'debit',
+            bill.cashIn,
+            `Cash Paid Upfront for Bill ${bill.invoiceNo}`,
+            bill.invoiceNo,
+            bill.createdAt ? new Date(bill.createdAt) : new Date()
+          );
+        }
+
+        const arCreditExists = await LedgerTransaction.findOne({
+          account: arAccount._id,
+          reference: bill.invoiceNo,
+          type: 'credit'
+        });
+
+        if (!arCreditExists) {
+          await logLedgerTransaction(
+            'AR',
+            'credit',
+            bill.cashIn,
+            `Upfront payment credit for Bill ${bill.invoiceNo}`,
+            bill.invoiceNo,
+            bill.createdAt ? new Date(bill.createdAt) : new Date()
+          );
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Ledger] Error syncing bills to ledger:', err);
+  }
+}
+
+/**
+ * Clean up orphan ledger transactions for deleted bills, expenses, orders, etc.
+ * and recalculate balances automatically.
+ */
+export async function cleanOrphanLedgerTransactions() {
+  try {
+    await connectToDatabase();
+    const Bill = (await import('@/models/Bill')).default;
+    const Expense = (await import('@/models/Expense')).default;
+    const Order = (await import('@/models/Order')).default;
+    const SupplierBill = (await import('@/models/SupplierBill')).default;
+    const mongoose = (await import('mongoose')).default;
+
+    const transactions = await LedgerTransaction.find();
+    let deletedCount = 0;
+
+    for (const tx of transactions) {
+      // 1. Check Client Bill references: INV-xxxxxxx
+      if (tx.reference && tx.reference.startsWith('INV-')) {
+        const billExists = await Bill.findOne({ invoiceNo: tx.reference });
+        if (!billExists) {
+          await LedgerTransaction.findByIdAndDelete(tx._id);
+          deletedCount++;
+          continue;
+        }
+      }
+
+      // 2. Check description containing INV- or Bill numbers
+      if (tx.description && (/INV-\d+/i.test(tx.description) || /Bill\s+(\w+)/i.test(tx.description))) {
+        const match = tx.description.match(/INV-\d+/i) || tx.description.match(/Bill\s+(\w+)/i);
+        if (match) {
+          const invNo = match[0].replace(/^Bill\s+/i, '').toUpperCase();
+          const billExists = await Bill.findOne({
+            $or: [
+              { invoiceNo: invNo },
+              { invoiceNo: `INV-${invNo}` },
+              { invoiceNo: new RegExp(invNo, 'i') }
+            ]
+          });
+          if (!billExists) {
+            await LedgerTransaction.findByIdAndDelete(tx._id);
+            deletedCount++;
+            continue;
+          }
+        }
+      }
+
+      // 3. Check Expense/Income ObjectId references (24 hex characters)
+      if (tx.reference && mongoose.Types.ObjectId.isValid(tx.reference) && tx.reference.length === 24) {
+        const expenseExists = await Expense.findById(tx.reference);
+        const billExists = await Bill.findById(tx.reference);
+        const orderExists = await Order.findById(tx.reference);
+        const supplierBillExists = await SupplierBill.findById(tx.reference);
+
+        if (!expenseExists && !billExists && !orderExists && !supplierBillExists) {
+          await LedgerTransaction.findByIdAndDelete(tx._id);
+          deletedCount++;
+          continue;
+        }
+      }
+    }
+
+    // Sync active bills to ensure missing initial AR debits are generated
+    await syncBillsToLedger();
+
+    // Recalculate all accounts
+    await recalculateLedgerBalance('CASH');
+    await recalculateLedgerBalance('BANK');
+    await recalculateLedgerBalance('AR');
+    await recalculateLedgerBalance('AP');
+
+    return deletedCount;
+  } catch (err) {
+    console.error('[Ledger] Error auto-cleaning orphan transactions:', err);
+    return 0;
+  }
+}
+

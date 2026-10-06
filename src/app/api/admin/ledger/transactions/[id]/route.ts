@@ -96,12 +96,7 @@ export async function DELETE(
       return NextResponse.json({ message: 'Transaction not found' }, { status: 404 });
     }
 
-    const isManual = tx.reference && ['manual-deposit', 'manual-withdrawal', 'manual-transfer'].includes(tx.reference);
-    if (!isManual) {
-      return NextResponse.json({ message: 'Only manual transactions can be deleted' }, { status: 400 });
-    }
-
-    const accountCode = (tx.account as any).code;
+    const accountCode = (tx.account as any)?.code;
 
     if (tx.reference === 'manual-transfer') {
       const timeWindow = 10000;
@@ -117,12 +112,16 @@ export async function DELETE(
 
       if (companion) {
         await LedgerTransaction.findByIdAndDelete(companion._id);
-        await recalculateLedgerBalance((companion.account as any).code);
+        if ((companion.account as any)?.code) {
+          await recalculateLedgerBalance((companion.account as any).code);
+        }
       }
     }
 
     await LedgerTransaction.findByIdAndDelete(id);
-    await recalculateLedgerBalance(accountCode);
+    if (accountCode) {
+      await recalculateLedgerBalance(accountCode);
+    }
 
     return NextResponse.json({ message: 'Transaction deleted successfully' });
   } catch (error: any) {

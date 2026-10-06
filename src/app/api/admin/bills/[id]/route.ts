@@ -148,10 +148,32 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     const { id } = await params;
     await connectToDatabase();
 
-    const bill = await Bill.findByIdAndDelete(id);
+    const bill = await Bill.findById(id);
     if (!bill) {
       return NextResponse.json({ message: 'Bill not found' }, { status: 404 });
     }
+
+    // Delete associated ledger transactions for this bill
+    try {
+      const LedgerTransaction = (await import('@/models/LedgerTransaction')).default;
+      const { recalculateLedgerBalance } = await import('@/lib/ledgerHelper');
+
+      if (bill.invoiceNo) {
+        await LedgerTransaction.deleteMany({
+          $or: [
+            { reference: bill.invoiceNo },
+            { description: { $regex: bill.invoiceNo, $options: 'i' } }
+          ]
+        });
+        await recalculateLedgerBalance('AR');
+        await recalculateLedgerBalance('CASH');
+        await recalculateLedgerBalance('BANK');
+      }
+    } catch (err) {
+      console.error('Error removing ledger transactions for bill:', err);
+    }
+
+    await Bill.findByIdAndDelete(id);
 
     return NextResponse.json({ message: 'Bill deleted successfully' });
   } catch (error: any) {

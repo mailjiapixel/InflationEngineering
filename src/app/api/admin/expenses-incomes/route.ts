@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import connectToDatabase from '@/lib/db';
 import Expense from '@/models/Expense';
+import Bill from '@/models/Bill';
+import { logLedgerTransaction, recalculateLedgerBalance } from '@/lib/ledgerHelper';
 
 export async function GET(req: NextRequest) {
   try {
@@ -44,11 +46,11 @@ export async function GET(req: NextRequest) {
       query.date = dateQuery;
     }
 
-    const expenses = await Expense.find(query).sort({ date: -1 });
+    const expenses = await Expense.find(query).populate('bill').sort({ date: -1, createdAt: -1 });
     return NextResponse.json(expenses);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching transactions:', error);
-    return NextResponse.json({ message: 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json({ message: error.message || 'Internal Server Error' }, { status: 500 });
   }
 }
 
@@ -60,47 +62,122 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { title, amount, category, date, description, type } = body;
-
-    // Validate required fields (basic)
-    if (!title || amount === undefined || !category || !type) {
-      return NextResponse.json({ message: 'Missing required fields' }, { status: 400 });
-    }
-
-    // Build safe payload (whitelist)
-    const safePayload = {
+    const {
       title,
       amount,
       category,
+      date,
+      description,
       type,
-      date: date ? new Date(date) : new Date(),
-      description
-    };
+      accountCode = 'CASH',
+      billId,
+      invoiceNo
+    } = body;
+
+    const numAmount = Number(amount);
+    if (!title || isNaN(numAmount) || numAmount <= 0 || !category || !type) {
+      return NextResponse.json({ message: 'Missing or invalid required fields' }, { status: 400 });
+    }
 
     await connectToDatabase();
-    
-    const expense = await Expense.create(safePayload);
+    const txDate = date ? new Date(date) : new Date();
+
+    // SPECIAL HANDLER: Receive Client Bill (Income)
+    if (type === 'income' && (category === 'Receive Client Bill' || billId || invoiceNo)) {
+      let bill = null;
+      if (billId) {
+        bill = await Bill.findById(billId);
+      } else if (invoiceNo) {
+        bill = await Bill.findOne({ invoiceNo });
+      }
+
+      if (bill) {
+        const billInv = bill.invoiceNo;
+        const prevCashIn = bill.cashIn || 0;
+        const newCashIn = prevCashIn + numAmount;
+        const grandTotal = Math.round(bill.gTotal || bill.total || 0);
+        const newDue = Math.max(0, grandTotal - newCashIn);
+
+        bill.cashIn = newCashIn;
+        bill.currentBillDue = newDue;
+        if (newDue <= 0) {
+          bill.status = 'Paid';
+          bill.expectedReceivableDate = undefined;
+        }
+        await bill.save();
+
+        const expense = await Expense.create({
+          title,
+          amount: numAmount,
+          category: 'Receive Client Bill',
+          type: 'income',
+          date: txDate,
+          description: description || `Client bill payment received for ${billInv}`,
+          reference: billInv,
+          bill: bill._id,
+          invoiceNo: billInv,
+          accountCode: accountCode || 'CASH'
+        });
+
+        // Log double entry to Ledger
+        try {
+          // 1. Debit Cash/Bank (money entered account)
+          await logLedgerTransaction(
+            accountCode as any || 'CASH',
+            'debit',
+            numAmount,
+            `Payment Received for Bill ${billInv}`,
+            billInv,
+            txDate
+          );
+
+          // 2. Credit Accounts Receivable (asset due decreased)
+          await logLedgerTransaction(
+            'AR',
+            'credit',
+            numAmount,
+            `Payment credit for Bill ${billInv}`,
+            billInv,
+            txDate
+          );
+        } catch (err) {
+          console.error('Error logging client bill payment to ledger:', err);
+        }
+
+        return NextResponse.json(expense, { status: 201 });
+      }
+    }
+
+    // GENERAL HANDLER: Standard Expense or Income
+    const expense = await Expense.create({
+      title,
+      amount: numAmount,
+      category,
+      type,
+      date: txDate,
+      description,
+      accountCode: accountCode || 'CASH'
+    });
 
     // Log to ledger
     try {
-      const { logLedgerTransaction } = await import('@/lib/ledgerHelper');
       if (type === 'expense') {
-        // Credit Cash (decreases cash asset)
         await logLedgerTransaction(
-          'CASH',
+          accountCode as any || 'CASH',
           'credit',
-          amount,
+          numAmount,
           `Expense Paid: ${title}`,
-          expense._id.toString()
+          expense._id.toString(),
+          txDate
         );
       } else {
-        // Debit Cash (increases cash asset)
         await logLedgerTransaction(
-          'CASH',
+          accountCode as any || 'CASH',
           'debit',
-          amount,
+          numAmount,
           `Income Received: ${title}`,
-          expense._id.toString()
+          expense._id.toString(),
+          txDate
         );
       }
     } catch (err) {
@@ -108,8 +185,8 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json(expense, { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating transaction:', error);
-    return NextResponse.json({ message: 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json({ message: error.message || 'Internal Server Error' }, { status: 500 });
   }
 }

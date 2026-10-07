@@ -173,6 +173,22 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       console.error('Error removing ledger transactions for bill:', err);
     }
 
+    // Delete associated Expense/Income entries for this bill
+    try {
+      const Expense = (await import('@/models/Expense')).default;
+      await Expense.deleteMany({
+        $or: [
+          { bill: bill._id },
+          { invoiceNo: bill.invoiceNo },
+          { reference: bill.invoiceNo },
+          { title: { $regex: bill.invoiceNo, $options: 'i' } },
+          { description: { $regex: bill.invoiceNo, $options: 'i' } }
+        ]
+      });
+    } catch (err) {
+      console.error('Error removing expense entries for bill:', err);
+    }
+
     await Bill.findByIdAndDelete(id);
 
     return NextResponse.json({ message: 'Bill deleted successfully' });

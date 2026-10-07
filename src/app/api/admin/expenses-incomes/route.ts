@@ -5,7 +5,7 @@ import Expense from '@/models/Expense';
 import Bill from '@/models/Bill';
 import SupplierBill from '@/models/SupplierBill';
 import Supplier from '@/models/Supplier';
-import { logLedgerTransaction, recalculateLedgerBalance } from '@/lib/ledgerHelper';
+import { logLedgerTransaction, recalculateLedgerBalance, cleanOrphanLedgerTransactions } from '@/lib/ledgerHelper';
 
 export async function GET(req: NextRequest) {
   try {
@@ -15,6 +15,7 @@ export async function GET(req: NextRequest) {
     }
 
     await connectToDatabase();
+    await cleanOrphanLedgerTransactions();
     
     const { searchParams } = new URL(req.url);
     const category = searchParams.get('category');

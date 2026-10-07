@@ -297,6 +297,50 @@ export async function cleanOrphanLedgerTransactions() {
       }
     }
 
+    // Clean orphan Expense/Income records linked to non-existent bills or supplier bills
+    const allExpenses = await Expense.find({
+      $or: [
+        { bill: { $exists: true, $ne: null } },
+        { invoiceNo: { $exists: true, $ne: null } },
+        { supplierBill: { $exists: true, $ne: null } },
+        { reference: { $regex: /^INV-|^SB-|^PB-/i } },
+        { title: { $regex: /INV-\d+|SB-\d+|PB-\d+/i } }
+      ]
+    });
+
+    for (const exp of allExpenses) {
+      let isOrphan = false;
+
+      // Check client bill links
+      if (exp.bill) {
+        const bill = await Bill.findById(exp.bill);
+        if (!bill) isOrphan = true;
+      } else if (exp.invoiceNo && exp.invoiceNo.startsWith('INV-')) {
+        const bill = await Bill.findOne({ invoiceNo: exp.invoiceNo });
+        if (!bill) isOrphan = true;
+      } else if (exp.reference && exp.reference.startsWith('INV-')) {
+        const bill = await Bill.findOne({ invoiceNo: exp.reference });
+        if (!bill) isOrphan = true;
+      } else if (exp.title && /INV-\d+/i.test(exp.title)) {
+        const match = exp.title.match(/INV-\d+/i);
+        if (match) {
+          const bill = await Bill.findOne({ invoiceNo: match[0].toUpperCase() });
+          if (!bill) isOrphan = true;
+        }
+      }
+
+      // Check supplier bill links
+      if (exp.supplierBill) {
+        const sb = await SupplierBill.findById(exp.supplierBill);
+        if (!sb) isOrphan = true;
+      }
+
+      if (isOrphan) {
+        await Expense.findByIdAndDelete(exp._id);
+        deletedCount++;
+      }
+    }
+
     // Sync active bills to ensure missing initial AR debits are generated
     await syncBillsToLedger();
 

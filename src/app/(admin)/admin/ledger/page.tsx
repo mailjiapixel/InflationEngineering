@@ -356,16 +356,13 @@ function AccountsLedgerContent() {
                       <TableCell>
                         <div className="space-y-1 py-1">
                           <p className="font-medium text-foreground text-sm leading-snug">{tx.description}</p>
-                          <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                            <span className="font-mono text-[11px] bg-muted/80 px-1.5 py-0.5 rounded font-medium text-muted-foreground border">
-                              ID: {String(tx._id)}
-                            </span>
-                            {tx.reference && (
+                          {tx.reference && (
+                            <div className="flex flex-wrap items-center gap-1.5 text-xs">
                               <span className="text-[11px] font-mono font-bold bg-primary/10 text-primary px-1.5 py-0.5 rounded uppercase border border-primary/20">
                                 REF: {tx.reference}
                               </span>
-                            )}
-                          </div>
+                            </div>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>

@@ -195,6 +195,21 @@ export async function DELETE(
       console.error('Error removing ledger transactions:', err);
     }
 
+    // Delete associated Expense entries for this supplier bill
+    try {
+      const Expense = (await import('@/models/Expense')).default;
+      await Expense.deleteMany({
+        $or: [
+          { supplierBill: bill._id },
+          { reference: bill.billNo },
+          { title: { $regex: bill.billNo, $options: 'i' } },
+          { description: { $regex: bill.billNo, $options: 'i' } }
+        ]
+      });
+    } catch (err) {
+      console.error('Error removing expense entries for supplier bill:', err);
+    }
+
     await SupplierBill.findByIdAndDelete(id);
 
     return NextResponse.json({ message: 'Supplier bill deleted successfully' });

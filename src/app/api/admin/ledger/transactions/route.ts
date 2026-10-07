@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
 
     const transactions = await LedgerTransaction.find()
       .populate('account')
-      .sort({ date: -1, createdAt: -1 });
+      .sort({ createdAt: -1, _id: -1 });
 
     return NextResponse.json(transactions);
   } catch (error: any) {

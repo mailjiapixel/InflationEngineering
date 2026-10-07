@@ -166,23 +166,30 @@ function AccountsLedgerContent() {
     }
   };
 
-  const filteredTransactions = transactions.filter((tx) => {
-    const term = journalSearchTerm.toLowerCase();
-    const name = tx.account?.name?.toLowerCase() || '';
-    const desc = tx.description?.toLowerCase() || '';
-    const ref = tx.reference?.toLowerCase() || '';
-    const matchesSearch = name.includes(term) || desc.includes(term) || ref.includes(term);
+  const filteredTransactions = transactions
+    .filter((tx) => {
+      const term = journalSearchTerm.toLowerCase();
+      const name = tx.account?.name?.toLowerCase() || '';
+      const desc = tx.description?.toLowerCase() || '';
+      const ref = tx.reference?.toLowerCase() || '';
+      const id = String(tx._id || '').toLowerCase();
+      const matchesSearch = name.includes(term) || desc.includes(term) || ref.includes(term) || id.includes(term);
 
-    let matchesDate = true;
-    if (dateFilter.from) {
-      matchesDate = matchesDate && new Date(tx.date) >= new Date(dateFilter.from + 'T00:00:00');
-    }
-    if (dateFilter.to) {
-      matchesDate = matchesDate && new Date(tx.date) <= new Date(dateFilter.to + 'T23:59:59');
-    }
+      let matchesDate = true;
+      if (dateFilter.from) {
+        matchesDate = matchesDate && new Date(tx.date) >= new Date(dateFilter.from + 'T00:00:00');
+      }
+      if (dateFilter.to) {
+        matchesDate = matchesDate && new Date(tx.date) <= new Date(dateFilter.to + 'T23:59:59');
+      }
 
-    return matchesSearch && matchesDate;
-  });
+      return matchesSearch && matchesDate;
+    })
+    .sort((a, b) => {
+      const timeB = new Date(b.createdAt || b.date).getTime();
+      const timeA = new Date(a.createdAt || a.date).getTime();
+      return timeB - timeA;
+    });
 
   const ITEMS_PER_PAGE = 20;
   const totalPages = Math.ceil(filteredTransactions.length / ITEMS_PER_PAGE);
@@ -335,17 +342,30 @@ function AccountsLedgerContent() {
                   {paginatedTransactions.map((tx) => (
                     <TableRow key={tx._id}>
                       <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                        {format(new Date(tx.date), 'dd MMM yyyy')}
+                        <div className="font-semibold text-foreground">
+                          {format(new Date(tx.createdAt || tx.date), 'dd MMM yyyy')}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {format(new Date(tx.createdAt || tx.date), 'hh:mm:ss a')}
+                        </div>
                       </TableCell>
-                      <TableCell className="font-medium">{tx.account?.name}</TableCell>
+                      <TableCell className="font-semibold">{tx.account?.name}</TableCell>
                       <TableCell>
-                        <div className="space-y-0.5">
-                          <p>{tx.description}</p>
-                          {tx.reference && (
-                            <span className="text-xs text-muted-foreground uppercase bg-muted px-1.5 py-0.5 rounded">
-                              Ref: {tx.reference}
+                        <div className="space-y-1.5 py-1">
+                          <p className="font-medium text-foreground text-sm leading-snug">{tx.description}</p>
+                          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                            <span className="font-mono text-[11px] bg-muted/80 px-1.5 py-0.5 rounded font-medium text-muted-foreground border">
+                              ID: {String(tx._id)}
                             </span>
-                          )}
+                            <span className="font-mono text-[11px] bg-muted/80 px-1.5 py-0.5 rounded font-medium text-muted-foreground border">
+                              🕒 {format(new Date(tx.createdAt || tx.date), 'dd/MM/yyyy, hh:mm:ss a')}
+                            </span>
+                            {tx.reference && (
+                              <span className="text-[11px] font-mono font-bold bg-primary/10 text-primary px-1.5 py-0.5 rounded uppercase border border-primary/20">
+                                REF: {tx.reference}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell>

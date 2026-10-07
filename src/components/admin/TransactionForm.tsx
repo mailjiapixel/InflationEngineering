@@ -284,21 +284,7 @@ export function TransactionForm({ initialData, presetTab = 'transaction', onSucc
       });
 
       if (response.ok) {
-        const result = await response.json();
         toast.success(`Transaction ${initialData ? 'updated' : 'recorded'} successfully`);
-
-        // Automatically Generate Money Receipt PDF if this was a Client Bill payment!
-        if (values.type === 'income' && (values.category === 'Receive Client Bill' || values.billId || values.invoiceNo)) {
-          const targetBill = result.billData || selectedBill || dueBills.find(b => b._id === values.billId || b.invoiceNo === values.invoiceNo);
-          if (targetBill) {
-            try {
-              toast.info('Generating Money Receipt PDF...');
-              generatePaymentReceiptPDF(targetBill, settings, values.amount, values.date, result._id);
-            } catch (pdfErr) {
-              console.error('Error generating PDF receipt:', pdfErr);
-            }
-          }
-        }
 
         if (initialData) {
           onSuccess(true);
@@ -618,35 +604,54 @@ export function TransactionForm({ initialData, presetTab = 'transaction', onSucc
 
             {/* Client Due Bills Dropdown (When Receive Client Bill is selected) */}
             {isClientBillIncome && (
-              <div className="p-3 rounded-lg border border-emerald-200 bg-emerald-50/60 dark:bg-emerald-950/20 dark:border-emerald-900/50 space-y-2">
+              <div className="p-3.5 rounded-lg border border-emerald-200 bg-emerald-50/60 dark:bg-emerald-950/20 dark:border-emerald-900/50 space-y-2.5">
                 <div className="flex items-center justify-between text-xs font-semibold text-emerald-800 dark:text-emerald-300">
                   <span className="flex items-center gap-1.5">
                     <Receipt className="h-4 w-4 text-emerald-600" /> Select Due Client Bill
                   </span>
-                  <span className="text-[11px] bg-emerald-100 dark:bg-emerald-900/50 px-2 py-0.5 rounded-full font-bold">
+                  <span className="text-xs bg-emerald-100 dark:bg-emerald-900/50 px-2.5 py-0.5 rounded-full font-bold text-emerald-800 dark:text-emerald-300">
                     {dueBills.length} Due Bill(s)
                   </span>
                 </div>
 
                 <Select value={form.watch('billId')} onValueChange={handleSelectBill}>
-                  <SelectTrigger ref={billSelectRef} className="bg-background text-xs h-9">
+                  <SelectTrigger ref={billSelectRef} className="w-full bg-background text-sm h-11 px-3 border border-input shadow-xs">
                     <SelectValue placeholder={loadingBills ? "Loading due bills..." : "Choose client bill to collect payment"}>
-                      {selectedBill ? `${selectedBill.invoiceNo} - ${selectedBill.clientName} (Due: ৳${(selectedBill.currentBillDue || (selectedBill.gTotal - (selectedBill.cashIn || 0))).toLocaleString()})` : "Choose client bill"}
+                      {selectedBill ? (
+                        <span className="font-semibold text-foreground text-sm truncate">
+                          <strong className="text-base text-foreground font-bold">{selectedBill.clientName}</strong> — #{selectedBill.invoiceNo} (Due: ৳{(selectedBill.currentBillDue || (selectedBill.gTotal - (selectedBill.cashIn || 0))).toLocaleString()})
+                        </span>
+                      ) : (
+                        "Choose client bill"
+                      )}
                     </SelectValue>
                   </SelectTrigger>
-                  <SelectContent className="max-h-56">
+                  <SelectContent className="w-[var(--radix-select-trigger-width)] min-w-[340px] sm:min-w-[440px] max-h-64 p-1">
                     {dueBills.length === 0 ? (
-                      <SelectItem value="none" disabled className="text-xs">No pending due bills found</SelectItem>
+                      <SelectItem value="none" disabled className="text-sm py-2 text-center">No pending due bills found</SelectItem>
                     ) : (
                       dueBills.map((b) => {
                         const remaining = b.currentBillDue !== undefined ? b.currentBillDue : (b.gTotal - (b.cashIn || 0));
                         return (
-                          <SelectItem key={b._id} value={b._id} className="text-xs">
-                            <div className="flex flex-col py-0.5">
-                              <span className="font-semibold text-foreground">{b.invoiceNo} — {b.clientName}</span>
-                              <span className="text-[11px] text-muted-foreground">
-                                Total: ৳{(b.gTotal || b.total).toLocaleString()} | Paid: ৳{(b.cashIn || 0).toLocaleString()} | <strong className="text-rose-600 font-bold">Due: ৳{remaining.toLocaleString()}</strong>
-                              </span>
+                          <SelectItem key={b._id} value={b._id} className="text-sm py-2 px-3 border-b border-border/40 last:border-0 cursor-pointer">
+                            <div className="flex flex-col gap-1 w-full text-left">
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="font-bold text-sm sm:text-base text-foreground">
+                                  {b.clientName}
+                                </span>
+                                <span className="text-xs font-mono font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 px-2 py-0.5 rounded shrink-0">
+                                  {b.invoiceNo}
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                <span>Total: ৳{(b.gTotal || b.total).toLocaleString()}</span>
+                                <span>•</span>
+                                <span>Paid: ৳{(b.cashIn || 0).toLocaleString()}</span>
+                                <span>•</span>
+                                <span className="text-rose-600 dark:text-rose-400 font-bold bg-rose-50 dark:bg-rose-950/40 px-1.5 py-0.5 rounded">
+                                  Due: ৳{remaining.toLocaleString()}
+                                </span>
+                              </div>
                             </div>
                           </SelectItem>
                         );
@@ -654,44 +659,95 @@ export function TransactionForm({ initialData, presetTab = 'transaction', onSucc
                     )}
                   </SelectContent>
                 </Select>
+
+                {selectedBill && (
+                  <div className="p-2.5 bg-background/80 border border-emerald-200 dark:border-emerald-900/50 rounded-md flex items-center justify-between gap-2 shadow-2xs">
+                    <div>
+                      <div className="text-sm font-bold text-foreground">{selectedBill.clientName}</div>
+                      <div className="text-xs text-muted-foreground font-mono">Invoice #{selectedBill.invoiceNo}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[10px] text-muted-foreground uppercase font-semibold">Remaining Due</div>
+                      <div className="text-sm font-bold text-rose-600">
+                        ৳{(selectedBill.currentBillDue || (selectedBill.gTotal - (selectedBill.cashIn || 0))).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
             {/* Supplier Due Bills Dropdown (When Supplier Bill Payment is selected) */}
             {isSupplierBillExpense && (
-              <div className="p-3 rounded-lg border border-amber-200 bg-amber-50/60 dark:bg-amber-950/20 dark:border-amber-900/50 space-y-2">
+              <div className="p-3.5 rounded-lg border border-amber-200 bg-amber-50/60 dark:bg-amber-950/20 dark:border-amber-900/50 space-y-2.5">
                 <div className="flex items-center justify-between text-xs font-semibold text-amber-800 dark:text-amber-300">
                   <span className="flex items-center gap-1.5">
                     <Truck className="h-4 w-4 text-amber-600" /> Select Due Supplier Bill
                   </span>
-                  <span className="text-[11px] bg-amber-100 dark:bg-amber-900/50 px-2 py-0.5 rounded-full font-bold">
+                  <span className="text-xs bg-amber-100 dark:bg-amber-900/50 px-2.5 py-0.5 rounded-full font-bold text-amber-800 dark:text-amber-300">
                     {dueSupplierBills.length} Due Bill(s)
                   </span>
                 </div>
 
                 <Select value={form.watch('supplierBillId')} onValueChange={handleSelectSupplierBill}>
-                  <SelectTrigger ref={supplierBillSelectRef} className="bg-background text-xs h-9">
+                  <SelectTrigger ref={supplierBillSelectRef} className="w-full bg-background text-sm h-11 px-3 border border-input shadow-xs">
                     <SelectValue placeholder="Choose supplier bill to pay">
-                      {selectedSupplierBill ? `#${selectedSupplierBill.billNo} - ${selectedSupplierBill.supplier?.name || 'Supplier'} (Due: ৳${(selectedSupplierBill.dueAmount || selectedSupplierBill.total).toLocaleString()})` : "Choose supplier bill"}
+                      {selectedSupplierBill ? (
+                        <span className="font-semibold text-foreground text-sm truncate">
+                          <strong className="text-base text-foreground font-bold">{selectedSupplierBill.supplier?.name || selectedSupplierBill.supplier?.companyName || 'Supplier'}</strong> — #{selectedSupplierBill.billNo} (Due: ৳{(selectedSupplierBill.dueAmount || selectedSupplierBill.total).toLocaleString()})
+                        </span>
+                      ) : (
+                        "Choose supplier bill"
+                      )}
                     </SelectValue>
                   </SelectTrigger>
-                  <SelectContent className="max-h-56">
+                  <SelectContent className="w-[var(--radix-select-trigger-width)] min-w-[340px] sm:min-w-[440px] max-h-64 p-1">
                     {dueSupplierBills.length === 0 ? (
-                      <SelectItem value="none" disabled className="text-xs">No pending supplier bills found</SelectItem>
+                      <SelectItem value="none" disabled className="text-sm py-2 text-center">No pending supplier bills found</SelectItem>
                     ) : (
                       dueSupplierBills.map((b) => (
-                        <SelectItem key={b._id} value={b._id} className="text-xs">
-                          <div className="flex flex-col py-0.5">
-                            <span className="font-semibold text-foreground">#{b.billNo} — {b.supplier?.name || b.supplier?.companyName || 'Supplier'}</span>
-                            <span className="text-[11px] text-muted-foreground">
-                              Total: ৳{b.total.toLocaleString()} | Paid: ৳{(b.paidAmount || 0).toLocaleString()} | <strong className="text-rose-600 font-bold">Due: ৳{b.dueAmount.toLocaleString()}</strong>
-                            </span>
+                        <SelectItem key={b._id} value={b._id} className="text-sm py-2 px-3 border-b border-border/40 last:border-0 cursor-pointer">
+                          <div className="flex flex-col gap-1 w-full text-left">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="font-bold text-sm sm:text-base text-foreground">
+                                {b.supplier?.name || b.supplier?.companyName || 'Supplier'}
+                              </span>
+                              <span className="text-xs font-mono font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 px-2 py-0.5 rounded shrink-0">
+                                #{b.billNo}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                              <span>Total: ৳{b.total.toLocaleString()}</span>
+                              <span>•</span>
+                              <span>Paid: ৳{(b.paidAmount || 0).toLocaleString()}</span>
+                              <span>•</span>
+                              <span className="text-rose-600 dark:text-rose-400 font-bold bg-rose-50 dark:bg-rose-950/40 px-1.5 py-0.5 rounded">
+                                Due: ৳{b.dueAmount.toLocaleString()}
+                              </span>
+                            </div>
                           </div>
                         </SelectItem>
                       ))
                     )}
                   </SelectContent>
                 </Select>
+
+                {selectedSupplierBill && (
+                  <div className="p-2.5 bg-background/80 border border-amber-200 dark:border-amber-900/50 rounded-md flex items-center justify-between gap-2 shadow-2xs">
+                    <div>
+                      <div className="text-sm font-bold text-foreground">
+                        {selectedSupplierBill.supplier?.name || selectedSupplierBill.supplier?.companyName || 'Supplier'}
+                      </div>
+                      <div className="text-xs text-muted-foreground font-mono">Bill #{selectedSupplierBill.billNo}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[10px] text-muted-foreground uppercase font-semibold">Remaining Due</div>
+                      <div className="text-sm font-bold text-rose-600">
+                        ৳{(selectedSupplierBill.dueAmount || selectedSupplierBill.total).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -777,7 +833,7 @@ export function TransactionForm({ initialData, presetTab = 'transaction', onSucc
               className="w-full bg-primary text-primary-foreground font-bold h-9 text-xs mt-1"
             >
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {initialData ? 'Update Record' : isClientBillIncome ? 'Receive Payment & Print Receipt' : `Record ${selectedType === 'income' ? 'Income' : 'Expense'}`}
+              {initialData ? 'Update Record' : `Record ${selectedType === 'income' ? 'Income' : 'Expense'}`}
             </Button>
           </form>
         </Form>

@@ -111,6 +111,15 @@ function ExpensesIncomesContent() {
     fetchTransactions();
   }, []);
 
+  useEffect(() => {
+    if (searchParams.get('action') === 'new') {
+      setIsDialogOpen(true);
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete('action');
+      router.replace(`/admin/expenses-incomes?${params.toString()}`);
+    }
+  }, [searchParams, router]);
+
   const handlePrintReceipt = async (invoiceNo: string, amount: number, txDate: string, txId: string) => {
     try {
       setPrintingReceipt(txId);
@@ -240,6 +249,7 @@ function ExpensesIncomesContent() {
           </DialogHeader>
           <TransactionForm
             initialData={editingTransaction}
+            presetTab={(searchParams.get('tab') as any) || 'transaction'}
             onSuccess={(wasEdit) => {
               if (wasEdit) {
                 setIsDialogOpen(false);

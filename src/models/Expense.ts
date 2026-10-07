@@ -10,6 +10,8 @@ export interface IExpense extends Document {
   reference?: string;
   bill?: mongoose.Types.ObjectId | string;
   invoiceNo?: string;
+  supplier?: mongoose.Types.ObjectId | string;
+  supplierBill?: mongoose.Types.ObjectId | string;
   accountCode?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -35,10 +37,16 @@ const ExpenseSchema: Schema<IExpense> = new Schema(
     reference: { type: String },
     bill: { type: Schema.Types.ObjectId, ref: 'Bill' },
     invoiceNo: { type: String },
+    supplier: { type: Schema.Types.ObjectId, ref: 'Supplier' },
+    supplierBill: { type: Schema.Types.ObjectId, ref: 'SupplierBill' },
     accountCode: { type: String, default: 'CASH' },
   },
   { timestamps: true }
 );
+
+if (process.env.NODE_ENV === 'development' && mongoose.models.Expense) {
+  delete (mongoose.models as any).Expense;
+}
 
 const Expense: Model<IExpense> = mongoose.models.Expense || mongoose.model<IExpense>('Expense', ExpenseSchema);
 

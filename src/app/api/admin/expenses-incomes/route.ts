@@ -3,6 +3,8 @@ import { auth } from '@/auth';
 import connectToDatabase from '@/lib/db';
 import Expense from '@/models/Expense';
 import Bill from '@/models/Bill';
+import SupplierBill from '@/models/SupplierBill';
+import Supplier from '@/models/Supplier';
 import { logLedgerTransaction, recalculateLedgerBalance } from '@/lib/ledgerHelper';
 
 export async function GET(req: NextRequest) {
@@ -46,7 +48,11 @@ export async function GET(req: NextRequest) {
       query.date = dateQuery;
     }
 
-    const expenses = await Expense.find(query).populate('bill').sort({ date: -1, createdAt: -1 });
+    const expenses = await Expense.find(query)
+      .populate({ path: 'bill', strictPopulate: false })
+      .populate({ path: 'supplier', select: 'name phone companyName', strictPopulate: false })
+      .populate({ path: 'supplierBill', strictPopulate: false })
+      .sort({ date: -1, createdAt: -1 });
     return NextResponse.json(expenses);
   } catch (error: any) {
     console.error('Error fetching transactions:', error);
@@ -71,7 +77,9 @@ export async function POST(req: NextRequest) {
       type,
       accountCode = 'CASH',
       billId,
-      invoiceNo
+      invoiceNo,
+      supplierId,
+      supplierBillId
     } = body;
 
     const numAmount = Number(amount);
@@ -82,7 +90,7 @@ export async function POST(req: NextRequest) {
     await connectToDatabase();
     const txDate = date ? new Date(date) : new Date();
 
-    // SPECIAL HANDLER: Receive Client Bill (Income)
+    // SPECIAL HANDLER 1: Receive Client Bill (Income)
     if (type === 'income' && (category === 'Receive Client Bill' || billId || invoiceNo)) {
       let bill = null;
       if (billId) {
@@ -106,7 +114,7 @@ export async function POST(req: NextRequest) {
         }
         await bill.save();
 
-        const expense = await Expense.create({
+        let expense = await Expense.create({
           title,
           amount: numAmount,
           category: 'Receive Client Bill',
@@ -121,7 +129,6 @@ export async function POST(req: NextRequest) {
 
         // Log double entry to Ledger
         try {
-          // 1. Debit Cash/Bank (money entered account)
           await logLedgerTransaction(
             accountCode as any || 'CASH',
             'debit',
@@ -131,7 +138,6 @@ export async function POST(req: NextRequest) {
             txDate
           );
 
-          // 2. Credit Accounts Receivable (asset due decreased)
           await logLedgerTransaction(
             'AR',
             'credit',
@@ -144,6 +150,103 @@ export async function POST(req: NextRequest) {
           console.error('Error logging client bill payment to ledger:', err);
         }
 
+        expense = await Expense.findById(expense._id).populate({ path: 'bill', strictPopulate: false });
+        return NextResponse.json({ ...expense.toObject(), billData: bill }, { status: 201 });
+      }
+    }
+
+    // SPECIAL HANDLER 2: Supplier Bill Payment (Expense)
+    if (type === 'expense' && (supplierBillId || supplierId || category === 'Supplier Bill Payment' || category === 'Account payable')) {
+      let supBill = null;
+      if (supplierBillId) {
+        supBill = await SupplierBill.findById(supplierBillId);
+      }
+
+      if (supBill) {
+        const prevPaid = supBill.paidAmount || 0;
+        const newPaid = prevPaid + numAmount;
+        const total = supBill.total || 0;
+        const newDue = Math.max(0, total - newPaid);
+
+        supBill.paidAmount = newPaid;
+        supBill.dueAmount = newDue;
+        supBill.status = newDue <= 0 ? 'Paid' : (newPaid > 0 ? 'Partially Paid' : 'Due');
+        await supBill.save();
+
+        let expense = await Expense.create({
+          title,
+          amount: numAmount,
+          category: category || 'Supplier Bill Payment',
+          type: 'expense',
+          date: txDate,
+          description: description || `Supplier bill payment for #${supBill.billNo}`,
+          reference: supBill.billNo,
+          supplierBill: supBill._id,
+          supplier: supBill.supplier,
+          accountCode: accountCode || 'CASH'
+        });
+
+        try {
+          await logLedgerTransaction(
+            'AP',
+            'debit',
+            numAmount,
+            `Supplier Bill Payment ${supBill.billNo}`,
+            supBill.billNo,
+            txDate
+          );
+
+          await logLedgerTransaction(
+            accountCode as any || 'CASH',
+            'credit',
+            numAmount,
+            `Supplier Bill Payment ${supBill.billNo}`,
+            supBill.billNo,
+            txDate
+          );
+        } catch (err) {
+          console.error('Error logging supplier bill payment to ledger:', err);
+        }
+
+        expense = await Expense.findById(expense._id)
+          .populate({ path: 'supplier', strictPopulate: false })
+          .populate({ path: 'supplierBill', strictPopulate: false });
+        return NextResponse.json(expense, { status: 201 });
+      } else if (supplierId) {
+        let expense = await Expense.create({
+          title,
+          amount: numAmount,
+          category: category || 'Supplier Bill Payment',
+          type: 'expense',
+          date: txDate,
+          description: description || 'Payment to supplier',
+          supplier: supplierId,
+          accountCode: accountCode || 'CASH'
+        });
+
+        try {
+          await logLedgerTransaction(
+            'AP',
+            'debit',
+            numAmount,
+            `Payment to supplier: ${title}`,
+            expense._id.toString(),
+            txDate
+          );
+
+          await logLedgerTransaction(
+            accountCode as any || 'CASH',
+            'credit',
+            numAmount,
+            `Payment to supplier: ${title}`,
+            expense._id.toString(),
+            txDate
+          );
+        } catch (err) {
+          console.error('Error logging supplier payment to ledger:', err);
+        }
+
+        expense = await Expense.findById(expense._id).populate({ path: 'supplier', strictPopulate: false });
         return NextResponse.json(expense, { status: 201 });
       }
     }

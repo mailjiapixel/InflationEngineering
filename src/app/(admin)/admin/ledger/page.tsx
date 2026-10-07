@@ -20,6 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import Link from 'next/link';
 import {
   Loader2,
   Search,
@@ -29,7 +30,9 @@ import {
   Trash2,
   MoreHorizontal,
   Receipt,
-  RefreshCw
+  RefreshCw,
+  ArrowRightLeft,
+  Plus
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -197,15 +200,34 @@ function AccountsLedgerContent() {
             Live double-entry financial ledger tracking cash, bank, receivables, and payables.
           </p>
         </div>
-        <Button
-          variant="outline"
-          onClick={handleSyncLedger}
-          disabled={syncingLedger}
-          className="w-full sm:w-auto border-primary/40 text-primary hover:bg-primary/10 font-semibold"
-        >
-          <RefreshCw className={`mr-2 h-4 w-4 ${syncingLedger ? 'animate-spin' : ''}`} />
-          {syncingLedger ? 'Syncing...' : 'Sync & Clean Ledger'}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <Button
+            variant="outline"
+            asChild
+            className="w-full sm:w-auto font-semibold"
+          >
+            <Link href="/admin/expenses-incomes?action=new&tab=transfer">
+              <ArrowRightLeft className="mr-2 h-4 w-4" /> Transfer Balance
+            </Link>
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleSyncLedger}
+            disabled={syncingLedger}
+            className="w-full sm:w-auto border-primary/40 text-primary hover:bg-primary/10 font-semibold"
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${syncingLedger ? 'animate-spin' : ''}`} />
+            {syncingLedger ? 'Syncing...' : 'Sync & Clean Ledger'}
+          </Button>
+          <Button
+            asChild
+            className="w-full sm:w-auto bg-primary text-primary-foreground font-bold"
+          >
+            <Link href="/admin/expenses-incomes?action=new">
+              <Plus className="mr-2 h-4 w-4" /> Add Record
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {/* Account Balance Cards */}

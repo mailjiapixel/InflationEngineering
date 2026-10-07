@@ -105,6 +105,10 @@ const data = {
           url: "/admin/supplier-bills",
         },
         {
+          title: "Transaction Categories",
+          url: "/admin/expenses-incomes/categories",
+        },
+        {
           title: "Expenses & Incomes",
           url: "/admin/expenses-incomes",
         },

@@ -18,7 +18,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { Loader2, Receipt, FileText, CheckCircle2 } from 'lucide-react';
+import { Loader2, Receipt, FileText, CheckCircle2, ArrowRightLeft, ArrowDownRight, ArrowUpRight, Truck } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { generatePaymentReceiptPDF } from '@/lib/bill-invoice-generator';
 
 const INCOME_CATEGORIES = [
   'Receive Client Bill',
@@ -37,6 +38,7 @@ const INCOME_CATEGORIES = [
 ];
 
 const EXPENSE_CATEGORIES = [
+  'Supplier Bill Payment',
   'Office Rent',
   'Utility & Electricity',
   'Salary & Allowance',
@@ -55,7 +57,9 @@ const transactionSchema = z.object({
   category: z.string().min(1, 'Category is required'),
   billId: z.string().optional(),
   invoiceNo: z.string().optional(),
-  accountCode: z.string().default('CASH'),
+  supplierBillId: z.string().optional(),
+  supplierId: z.string().optional(),
+  accountCode: z.string().min(1, 'Account is required').default('CASH'),
   title: z.string().min(3, 'Title must be at least 3 characters'),
   amount: z.preprocess(
     (val) => (val === '' || val === undefined ? undefined : Number(val)),
@@ -69,21 +73,47 @@ type TransactionFormValues = z.infer<typeof transactionSchema>;
 
 interface TransactionFormProps {
   initialData?: any;
+  presetTab?: 'transaction' | 'transfer';
   onSuccess: (wasEdit: boolean) => void;
 }
 
-export function TransactionForm({ initialData, onSuccess }: TransactionFormProps) {
+export function TransactionForm({ initialData, presetTab = 'transaction', onSuccess }: TransactionFormProps) {
+  const [activeTab, setActiveTab] = useState<'transaction' | 'transfer'>(presetTab);
   const [loading, setLoading] = useState(false);
+  const [settings, setSettings] = useState<any>(null);
+  
+  // Accounts with real-time balance
   const [accounts, setAccounts] = useState<any[]>([]);
+  
+  // Client Bills
   const [dueBills, setDueBills] = useState<any[]>([]);
   const [selectedBill, setSelectedBill] = useState<any>(null);
   const [loadingBills, setLoadingBills] = useState(false);
+
+  // Supplier Bills & Suppliers
+  const [dueSupplierBills, setDueSupplierBills] = useState<any[]>([]);
+  const [selectedSupplierBill, setSelectedSupplierBill] = useState<any>(null);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
+
+  // Categories
   const [dbCategories, setDbCategories] = useState<any[]>([]);
 
-  // Refs for keyboard navigation
+  // Transfer State
+  const [transferDate, setTransferDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [fromAccountCode, setFromAccountCode] = useState<string>('CASH');
+  const [toAccountCode, setToAccountCode] = useState<string>('BANK');
+  const [transferTitle, setTransferTitle] = useState('');
+  const [transferAmount, setTransferAmount] = useState('');
+  const [transferSubmitLoading, setTransferSubmitLoading] = useState(false);
+
+  // Refs for keyboard Enter navigation
+  const dateRef = useRef<HTMLInputElement>(null);
+  const categoryRef = useRef<HTMLButtonElement>(null);
+  const billSelectRef = useRef<HTMLButtonElement>(null);
+  const supplierBillSelectRef = useRef<HTMLButtonElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const amountRef = useRef<HTMLInputElement>(null);
-  const dateRef = useRef<HTMLInputElement>(null);
+  const accountRef = useRef<HTMLButtonElement>(null);
   const descriptionRef = useRef<HTMLTextAreaElement>(null);
   const submitBtnRef = useRef<HTMLButtonElement>(null);
 
@@ -94,6 +124,8 @@ export function TransactionForm({ initialData, onSuccess }: TransactionFormProps
       category: initialData?.category || (initialData?.type === 'income' ? 'Receive Client Bill' : 'Office Supplies & Stationery'),
       billId: initialData?.bill?._id || initialData?.bill || '',
       invoiceNo: initialData?.invoiceNo || initialData?.reference || '',
+      supplierBillId: initialData?.supplierBill?._id || initialData?.supplierBill || '',
+      supplierId: initialData?.supplier?._id || initialData?.supplier || '',
       accountCode: initialData?.accountCode || 'CASH',
       title: initialData?.title || '',
       amount: initialData?.amount !== undefined ? initialData.amount : '',
@@ -104,13 +136,22 @@ export function TransactionForm({ initialData, onSuccess }: TransactionFormProps
 
   const selectedType = form.watch('type');
   const selectedCategory = form.watch('category');
+  const selectedAmount = Number(form.watch('amount')) || 0;
+  const selectedAccountCode = form.watch('accountCode');
 
-  // Load Accounts, Categories & Due Client Bills
+  // Load Store Settings, Accounts, Categories, Client Bills, Supplier Bills
   useEffect(() => {
+    fetch('/api/settings')
+      .then((res) => res.json())
+      .then((data) => setSettings(data))
+      .catch((err) => console.error('Error fetching settings:', err));
+
     fetch('/api/admin/ledger/accounts')
       .then((res) => res.json())
       .then((data) => {
-        if (Array.isArray(data)) setAccounts(data);
+        if (Array.isArray(data)) {
+          setAccounts(data.filter((a: any) => a.code === 'CASH' || a.code === 'BANK' || a.type === 'asset'));
+        }
       })
       .catch((err) => console.error('Error fetching accounts:', err));
 
@@ -126,20 +167,41 @@ export function TransactionForm({ initialData, onSuccess }: TransactionFormProps
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data)) {
-          // Filter bills that have remaining due or are Due status
-          const dueList = data.filter((b: any) => b.documentType === 'bill' && (b.status === 'Due' || (b.currentBillDue && b.currentBillDue > 0)));
+          const dueList = data.filter(
+            (b: any) => b.documentType === 'bill' && (b.status === 'Due' || (b.currentBillDue && b.currentBillDue > 0))
+          );
           setDueBills(dueList);
         }
       })
       .catch((err) => console.error('Error fetching bills:', err))
       .finally(() => setLoadingBills(false));
+
+    fetch('/api/admin/supplier-bills')
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          const dueList = data.filter((b: any) => b.status === 'Due' || b.status === 'Partially Paid' || (b.dueAmount && b.dueAmount > 0));
+          setDueSupplierBills(dueList);
+        }
+      })
+      .catch((err) => console.error('Error fetching supplier bills:', err));
+
+    fetch('/api/admin/suppliers')
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) setSuppliers(data);
+      })
+      .catch((err) => console.error('Error fetching suppliers:', err));
   }, []);
 
-  // When type changes, adjust default category if needed
+  // When type changes, adjust default category
   const handleTypeChange = (newType: 'income' | 'expense') => {
     form.setValue('type', newType);
     if (newType === 'income') {
       form.setValue('category', 'Receive Client Bill');
+      setSelectedSupplierBill(null);
+      form.setValue('supplierBillId', '');
+      form.setValue('supplierId', '');
     } else {
       form.setValue('category', 'Office Supplies & Stationery');
       setSelectedBill(null);
@@ -165,7 +227,39 @@ export function TransactionForm({ initialData, onSuccess }: TransactionFormProps
     }
   };
 
+  // When a supplier bill is selected
+  const handleSelectSupplierBill = (billId: string) => {
+    const supBill = dueSupplierBills.find((b: any) => b._id === billId);
+    if (supBill) {
+      setSelectedSupplierBill(supBill);
+      form.setValue('supplierBillId', supBill._id);
+      form.setValue('supplierId', supBill.supplier?._id || supBill.supplier);
+      const supplierName = supBill.supplier?.name || supBill.supplier?.companyName || 'Supplier';
+      form.setValue('title', `Supplier Payment: #${supBill.billNo} - ${supplierName}`);
+      form.setValue('amount', supBill.dueAmount || supBill.total);
+      form.setValue('description', `Payment to ${supplierName} for Supplier Bill #${supBill.billNo}`);
+    } else {
+      setSelectedSupplierBill(null);
+      form.setValue('supplierBillId', '');
+      form.setValue('supplierId', '');
+    }
+  };
+
+  // Submit Transaction (Income / Expense)
   const onSubmit = async (values: TransactionFormValues) => {
+    // Insufficient Balance Validation for Expense
+    if (values.type === 'expense') {
+      const selectedAcc = accounts.find(a => a.code === values.accountCode);
+      if (selectedAcc) {
+        const isEditCurrent = initialData && initialData.accountCode === values.accountCode && initialData.type === 'expense';
+        const effectiveBalance = (selectedAcc.currentBalance || 0) + (isEditCurrent ? initialData.amount : 0);
+        if (values.amount > effectiveBalance) {
+          toast.error(`Insufficient balance in ${selectedAcc.name}. Available: ৳${effectiveBalance.toLocaleString()}`);
+          return;
+        }
+      }
+    }
+
     setLoading(true);
     try {
       const url = initialData ? `/api/admin/expenses-incomes/${initialData._id}` : '/api/admin/expenses-incomes';
@@ -178,7 +272,22 @@ export function TransactionForm({ initialData, onSuccess }: TransactionFormProps
       });
 
       if (response.ok) {
+        const result = await response.json();
         toast.success(`Transaction ${initialData ? 'updated' : 'recorded'} successfully`);
+
+        // Automatically Generate Money Receipt PDF if this was a Client Bill payment!
+        if (values.type === 'income' && (values.category === 'Receive Client Bill' || values.billId || values.invoiceNo)) {
+          const targetBill = result.billData || selectedBill || dueBills.find(b => b._id === values.billId || b.invoiceNo === values.invoiceNo);
+          if (targetBill) {
+            try {
+              toast.info('Generating Money Receipt PDF...');
+              generatePaymentReceiptPDF(targetBill, settings, values.amount, values.date, result._id);
+            } catch (pdfErr) {
+              console.error('Error generating PDF receipt:', pdfErr);
+            }
+          }
+        }
+
         if (initialData) {
           onSuccess(true);
         } else {
@@ -188,15 +297,18 @@ export function TransactionForm({ initialData, onSuccess }: TransactionFormProps
             accountCode: form.getValues('accountCode') || 'CASH',
             billId: '',
             invoiceNo: '',
+            supplierBillId: '',
+            supplierId: '',
             title: '',
             amount: '' as any,
             date: form.getValues('date'),
             description: '',
           });
           setSelectedBill(null);
+          setSelectedSupplierBill(null);
           onSuccess(false);
           setTimeout(() => {
-            titleRef.current?.focus();
+            dateRef.current?.focus();
           }, 50);
         }
       } else {
@@ -211,251 +323,570 @@ export function TransactionForm({ initialData, onSuccess }: TransactionFormProps
     }
   };
 
+  // Submit Account Transfer
+  const handleTransferSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!transferTitle.trim()) {
+      toast.error('Transfer title or description is required');
+      return;
+    }
+    const amtVal = parseFloat(transferAmount) || 0;
+    if (amtVal <= 0) {
+      toast.error('Please enter a valid transfer amount');
+      return;
+    }
+    if (fromAccountCode === toAccountCode) {
+      toast.error('Source and Destination accounts must be different');
+      return;
+    }
+    const fromAcc = accounts.find(a => a.code === fromAccountCode);
+    if (fromAcc && amtVal > (fromAcc.currentBalance || 0)) {
+      toast.error(`Insufficient balance in ${fromAcc.name}. Available: ৳${(fromAcc.currentBalance || 0).toLocaleString()}`);
+      return;
+    }
+
+    setTransferSubmitLoading(true);
+    try {
+      const payload = {
+        entryType: 'transfer',
+        amount: amtVal,
+        description: transferTitle.trim(),
+        date: transferDate,
+        fromAccountCode,
+        toAccountCode,
+      };
+
+      const res = await fetch('/api/admin/ledger/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Transfer failed');
+      }
+
+      toast.success('Account transfer recorded successfully!');
+      setTransferTitle('');
+      setTransferAmount('');
+      onSuccess(false);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to save transfer');
+    } finally {
+      setTransferSubmitLoading(false);
+    }
+  };
+
+  // Keyboard navigation handlers
+  const handleDateKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      categoryRef.current?.focus();
+    }
+  };
+
+  const handleTitleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      amountRef.current?.focus();
+    }
+  };
+
+  const handleAmountKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      accountRef.current?.focus();
+    }
+  };
+
+  const handleAccountKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      descriptionRef.current?.focus();
+    }
+  };
+
+  const handleDescriptionKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      submitBtnRef.current?.click();
+    }
+  };
+
   const isClientBillIncome = selectedType === 'income' && selectedCategory === 'Receive Client Bill';
+  const isSupplierBillExpense = selectedType === 'expense' && (selectedCategory === 'Supplier Bill Payment' || selectedCategory === 'Account payable');
+  
   const customCats = dbCategories.filter((c: any) => c.type === selectedType).map((c: any) => c.name);
   const defaultCats = selectedType === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
   const categoryOptions = Array.from(new Set([...defaultCats, ...customCats]));
 
   return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-        {/* Date & Account */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <FormField
-            control={form.control}
-            name="date"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Date</FormLabel>
-                <FormControl>
-                  <Input 
-                    type="date" 
-                    {...field} 
-                    ref={(e) => {
-                      field.ref(e);
-                      dateRef.current = e;
-                    }}
-                    autoFocus
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+    <div className="space-y-4">
+      {/* Top Modal Tabs: Cash In/Out vs Account Transfer */}
+      {!initialData && (
+        <div className="flex border-b border-muted">
+          <button
+            type="button"
+            className={`flex-1 py-2 text-sm font-semibold border-b-2 transition-all flex items-center justify-center gap-2 ${
+              activeTab === 'transaction'
+                ? 'border-primary text-primary font-bold bg-primary/5'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+            onClick={() => setActiveTab('transaction')}
+          >
+            <Receipt className="h-4 w-4" />
+            <span>Income & Expense</span>
+          </button>
+          <button
+            type="button"
+            className={`flex-1 py-2 text-sm font-semibold border-b-2 transition-all flex items-center justify-center gap-2 ${
+              activeTab === 'transfer'
+                ? 'border-primary text-primary font-bold bg-primary/5'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+            onClick={() => setActiveTab('transfer')}
+          >
+            <ArrowRightLeft className="h-4 w-4" />
+            <span>Account Transfer</span>
+          </button>
+        </div>
+      )}
 
-          <FormField
-            control={form.control}
-            name="accountCode"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Deposit / Pay Account</FormLabel>
-                <Select value={field.value} onValueChange={field.onChange}>
+      {activeTab === 'transaction' ? (
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3.5 pt-1">
+            {/* Date & Account */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <FormField
+                control={form.control}
+                name="date"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-xs font-semibold">Date</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="date"
+                        className="h-9 text-xs"
+                        {...field}
+                        onKeyDown={handleDateKeyDown}
+                        ref={(e) => {
+                          field.ref(e);
+                          dateRef.current = e;
+                        }}
+                        autoFocus
+                      />
+                    </FormControl>
+                    <FormMessage className="text-[11px]" />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="accountCode"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-xs font-semibold">Deposit / Pay Account</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger ref={accountRef} onKeyDown={handleAccountKeyDown} className="h-9 text-xs">
+                          <SelectValue placeholder="Select Account">
+                            {field.value ? (() => {
+                              const acc = accounts.find(a => a.code === field.value);
+                              if (!acc) return field.value === 'BANK' ? 'Bank Account' : 'Cash Account';
+                              const isEditCurrent = initialData && initialData.accountCode === acc.code && initialData.type === 'expense';
+                              const effectiveBal = (acc.currentBalance || 0) + (isEditCurrent ? initialData.amount : 0);
+                              return `${acc.name} (৳${effectiveBal.toLocaleString()})`;
+                            })() : "Select Account"}
+                          </SelectValue>
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {accounts.length === 0 ? (
+                          <>
+                            <SelectItem value="CASH">Cash Account</SelectItem>
+                            <SelectItem value="BANK">Bank Account</SelectItem>
+                          </>
+                        ) : (
+                          accounts.map((acc) => {
+                            const isEditCurrent = initialData && initialData.accountCode === acc.code && initialData.type === 'expense';
+                            const effectiveBal = (acc.currentBalance || 0) + (isEditCurrent ? initialData.amount : 0);
+                            const hasInsufficient = selectedType === 'expense' && selectedAmount > effectiveBal;
+                            return (
+                              <SelectItem
+                                key={acc.code}
+                                value={acc.code}
+                                disabled={hasInsufficient}
+                                className="text-xs"
+                              >
+                                {acc.name} (৳{effectiveBal.toLocaleString()}) {hasInsufficient && " - Insufficient Balance"}
+                              </SelectItem>
+                            );
+                          })
+                        )}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage className="text-[11px]" />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            {/* Type Toggle */}
+            <FormField
+              control={form.control}
+              name="type"
+              render={({ field }) => (
+                <FormItem className="space-y-1">
+                  <FormLabel className="text-xs font-semibold">Transaction Type</FormLabel>
                   <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select Account" />
-                    </SelectTrigger>
+                    <RadioGroup
+                      value={field.value}
+                      onValueChange={(val: any) => handleTypeChange(val)}
+                      className="grid grid-cols-2 gap-3 pt-0.5"
+                    >
+                      <Label
+                        htmlFor="type-income"
+                        className={`flex items-center justify-center gap-2 p-2 rounded-lg border-2 cursor-pointer transition-all ${
+                          field.value === 'income'
+                            ? 'border-emerald-600 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:border-emerald-500 font-bold'
+                            : 'border-border text-muted-foreground hover:bg-muted/50'
+                        }`}
+                      >
+                        <RadioGroupItem value="income" id="type-income" className="sr-only" />
+                        <ArrowUpRight className="h-4 w-4" />
+                        Income (+)
+                      </Label>
+
+                      <Label
+                        htmlFor="type-expense"
+                        className={`flex items-center justify-center gap-2 p-2 rounded-lg border-2 cursor-pointer transition-all ${
+                          field.value === 'expense'
+                            ? 'border-rose-600 bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:border-rose-500 font-bold'
+                            : 'border-border text-muted-foreground hover:bg-muted/50'
+                        }`}
+                      >
+                        <RadioGroupItem value="expense" id="type-expense" className="sr-only" />
+                        <ArrowDownRight className="h-4 w-4" />
+                        Expense (-)
+                      </Label>
+                    </RadioGroup>
                   </FormControl>
-                  <SelectContent>
-                    <SelectItem value="CASH">Cash Account</SelectItem>
-                    <SelectItem value="BANK">Bank Account</SelectItem>
+                  <FormMessage className="text-[11px]" />
+                </FormItem>
+              )}
+            />
+
+            {/* Category */}
+            <FormField
+              control={form.control}
+              name="category"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs font-semibold">Category</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger ref={categoryRef} className="h-9 text-xs">
+                        <SelectValue placeholder="Select Category" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {categoryOptions.map((cat) => (
+                        <SelectItem key={cat} value={cat} className="text-xs">
+                          {cat}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage className="text-[11px]" />
+                </FormItem>
+              )}
+            />
+
+            {/* Client Due Bills Dropdown (When Receive Client Bill is selected) */}
+            {isClientBillIncome && (
+              <div className="p-3 rounded-lg border border-emerald-200 bg-emerald-50/60 dark:bg-emerald-950/20 dark:border-emerald-900/50 space-y-2">
+                <div className="flex items-center justify-between text-xs font-semibold text-emerald-800 dark:text-emerald-300">
+                  <span className="flex items-center gap-1.5">
+                    <Receipt className="h-4 w-4 text-emerald-600" /> Select Due Client Bill
+                  </span>
+                  <span className="text-[11px] bg-emerald-100 dark:bg-emerald-900/50 px-2 py-0.5 rounded-full font-bold">
+                    {dueBills.length} Due Bill(s)
+                  </span>
+                </div>
+
+                <Select value={form.watch('billId')} onValueChange={handleSelectBill}>
+                  <SelectTrigger ref={billSelectRef} className="bg-background text-xs h-9">
+                    <SelectValue placeholder={loadingBills ? "Loading due bills..." : "Choose client bill to collect payment"}>
+                      {selectedBill ? `${selectedBill.invoiceNo} - ${selectedBill.clientName} (Due: ৳${(selectedBill.currentBillDue || (selectedBill.gTotal - (selectedBill.cashIn || 0))).toLocaleString()})` : "Choose client bill"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="max-h-56">
+                    {dueBills.length === 0 ? (
+                      <SelectItem value="none" disabled className="text-xs">No pending due bills found</SelectItem>
+                    ) : (
+                      dueBills.map((b) => {
+                        const remaining = b.currentBillDue !== undefined ? b.currentBillDue : (b.gTotal - (b.cashIn || 0));
+                        return (
+                          <SelectItem key={b._id} value={b._id} className="text-xs">
+                            <div className="flex flex-col py-0.5">
+                              <span className="font-semibold text-foreground">{b.invoiceNo} — {b.clientName}</span>
+                              <span className="text-[11px] text-muted-foreground">
+                                Total: ৳{(b.gTotal || b.total).toLocaleString()} | Paid: ৳{(b.cashIn || 0).toLocaleString()} | <strong className="text-rose-600 font-bold">Due: ৳{remaining.toLocaleString()}</strong>
+                              </span>
+                            </div>
+                          </SelectItem>
+                        );
+                      })
+                    )}
                   </SelectContent>
                 </Select>
-                <FormMessage />
-              </FormItem>
+              </div>
             )}
-          />
-        </div>
 
-        {/* Type Toggle */}
-        <FormField
-          control={form.control}
-          name="type"
-          render={({ field }) => (
-            <FormItem className="space-y-1.5">
-              <FormLabel>Transaction Type</FormLabel>
-              <FormControl>
-                <RadioGroup
-                  value={field.value}
-                  onValueChange={(val: any) => handleTypeChange(val)}
-                  className="grid grid-cols-2 gap-3 pt-1"
-                >
-                  <Label
-                    htmlFor="type-income"
-                    className={`flex items-center justify-center gap-2 p-2.5 rounded-lg border-2 cursor-pointer transition-all ${
-                      field.value === 'income'
-                        ? 'border-emerald-600 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:border-emerald-500 font-bold'
-                        : 'border-border text-muted-foreground hover:bg-muted/50'
-                    }`}
-                  >
-                    <RadioGroupItem value="income" id="type-income" className="sr-only" />
-                    <CheckCircle2 className={`h-4 w-4 ${field.value === 'income' ? 'opacity-100' : 'opacity-0'}`} />
-                    Income (+)
-                  </Label>
+            {/* Supplier Due Bills Dropdown (When Supplier Bill Payment is selected) */}
+            {isSupplierBillExpense && (
+              <div className="p-3 rounded-lg border border-amber-200 bg-amber-50/60 dark:bg-amber-950/20 dark:border-amber-900/50 space-y-2">
+                <div className="flex items-center justify-between text-xs font-semibold text-amber-800 dark:text-amber-300">
+                  <span className="flex items-center gap-1.5">
+                    <Truck className="h-4 w-4 text-amber-600" /> Select Due Supplier Bill
+                  </span>
+                  <span className="text-[11px] bg-amber-100 dark:bg-amber-900/50 px-2 py-0.5 rounded-full font-bold">
+                    {dueSupplierBills.length} Due Bill(s)
+                  </span>
+                </div>
 
-                  <Label
-                    htmlFor="type-expense"
-                    className={`flex items-center justify-center gap-2 p-2.5 rounded-lg border-2 cursor-pointer transition-all ${
-                      field.value === 'expense'
-                        ? 'border-rose-600 bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:border-rose-500 font-bold'
-                        : 'border-border text-muted-foreground hover:bg-muted/50'
-                    }`}
-                  >
-                    <RadioGroupItem value="expense" id="type-expense" className="sr-only" />
-                    <CheckCircle2 className={`h-4 w-4 ${field.value === 'expense' ? 'opacity-100' : 'opacity-0'}`} />
-                    Expense (-)
-                  </Label>
-                </RadioGroup>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {/* Category */}
-        <FormField
-          control={form.control}
-          name="category"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Category</FormLabel>
-              <Select value={field.value} onValueChange={field.onChange}>
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select Category" />
+                <Select value={form.watch('supplierBillId')} onValueChange={handleSelectSupplierBill}>
+                  <SelectTrigger ref={supplierBillSelectRef} className="bg-background text-xs h-9">
+                    <SelectValue placeholder="Choose supplier bill to pay">
+                      {selectedSupplierBill ? `#${selectedSupplierBill.billNo} - ${selectedSupplierBill.supplier?.name || 'Supplier'} (Due: ৳${(selectedSupplierBill.dueAmount || selectedSupplierBill.total).toLocaleString()})` : "Choose supplier bill"}
+                    </SelectValue>
                   </SelectTrigger>
-                </FormControl>
+                  <SelectContent className="max-h-56">
+                    {dueSupplierBills.length === 0 ? (
+                      <SelectItem value="none" disabled className="text-xs">No pending supplier bills found</SelectItem>
+                    ) : (
+                      dueSupplierBills.map((b) => (
+                        <SelectItem key={b._id} value={b._id} className="text-xs">
+                          <div className="flex flex-col py-0.5">
+                            <span className="font-semibold text-foreground">#{b.billNo} — {b.supplier?.name || b.supplier?.companyName || 'Supplier'}</span>
+                            <span className="text-[11px] text-muted-foreground">
+                              Total: ৳{b.total.toLocaleString()} | Paid: ৳{(b.paidAmount || 0).toLocaleString()} | <strong className="text-rose-600 font-bold">Due: ৳{b.dueAmount.toLocaleString()}</strong>
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Title */}
+            <FormField
+              control={form.control}
+              name="title"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs font-semibold">Title / Particulars</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder={selectedType === 'income' ? 'e.g. Bill Payment INV-0012' : 'e.g. Office Rent or Supplier Payment'}
+                      className="h-9 text-xs"
+                      {...field}
+                      onKeyDown={handleTitleKeyDown}
+                      ref={(e) => {
+                        field.ref(e);
+                        titleRef.current = e;
+                      }}
+                    />
+                  </FormControl>
+                  <FormMessage className="text-[11px]" />
+                </FormItem>
+              )}
+            />
+
+            {/* Amount */}
+            <FormField
+              control={form.control}
+              name="amount"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs font-semibold">Amount (৳)</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      step="any"
+                      placeholder="0.00"
+                      className="h-9 text-xs font-bold"
+                      {...field}
+                      onKeyDown={handleAmountKeyDown}
+                      onChange={(e) => field.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+                      ref={(e) => {
+                        field.ref(e);
+                        amountRef.current = e;
+                      }}
+                    />
+                  </FormControl>
+                  <FormMessage className="text-[11px]" />
+                </FormItem>
+              )}
+            />
+
+            {/* Description */}
+            <FormField
+              control={form.control}
+              name="description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs font-semibold">Remarks / Note (Optional)</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      placeholder="Optional notes regarding this transaction..."
+                      className="min-h-[50px] text-xs py-1.5"
+                      {...field}
+                      onKeyDown={handleDescriptionKeyDown}
+                      ref={(e) => {
+                        field.ref(e);
+                        descriptionRef.current = e;
+                      }}
+                    />
+                  </FormControl>
+                  <FormMessage className="text-[11px]" />
+                </FormItem>
+              )}
+            />
+
+            <Button
+              ref={submitBtnRef}
+              type="submit"
+              disabled={loading}
+              className="w-full bg-primary text-primary-foreground font-bold h-9 text-xs mt-1"
+            >
+              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {initialData ? 'Update Record' : isClientBillIncome ? 'Receive Payment & Print Receipt' : `Record ${selectedType === 'income' ? 'Income' : 'Expense'}`}
+            </Button>
+          </form>
+        </Form>
+      ) : (
+        /* Account Transfer Form */
+        <form onSubmit={handleTransferSubmit} className="space-y-3.5 pt-1">
+          <div className="space-y-1">
+            <Label htmlFor="transferDate" className="text-xs font-semibold">Transfer Date</Label>
+            <Input
+              id="transferDate"
+              type="date"
+              className="h-9 text-xs"
+              value={transferDate}
+              onChange={(e) => setTransferDate(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="fromAcc" className="text-xs font-semibold">From Account (Source)</Label>
+              <Select
+                value={fromAccountCode}
+                onValueChange={(val: any) => {
+                  setFromAccountCode(val);
+                  if (val === toAccountCode) {
+                    const next = accounts.find(a => a.code !== val);
+                    if (next) setToAccountCode(next.code);
+                  }
+                }}
+              >
+                <SelectTrigger id="fromAcc" className="h-9 text-xs">
+                  <SelectValue>
+                    {fromAccountCode ? (() => {
+                      const acc = accounts.find(a => a.code === fromAccountCode);
+                      return acc ? `${acc.name} (৳${(acc.currentBalance || 0).toLocaleString()})` : fromAccountCode;
+                    })() : "Select Source"}
+                  </SelectValue>
+                </SelectTrigger>
                 <SelectContent>
-                  {categoryOptions.map((cat) => (
-                    <SelectItem key={cat} value={cat}>
-                      {cat}
+                  {accounts.map((acc) => {
+                    const amt = parseFloat(transferAmount) || 0;
+                    const insufficient = amt > (acc.currentBalance || 0);
+                    return (
+                      <SelectItem key={acc.code} value={acc.code} disabled={insufficient} className="text-xs">
+                        {acc.name} (৳{(acc.currentBalance || 0).toLocaleString()}) {insufficient && " - Insufficient"}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="toAcc" className="text-xs font-semibold">To Account (Destination)</Label>
+              <Select
+                value={toAccountCode}
+                onValueChange={(val: any) => {
+                  setToAccountCode(val);
+                  if (val === fromAccountCode) {
+                    const next = accounts.find(a => a.code !== val);
+                    if (next) setFromAccountCode(next.code);
+                  }
+                }}
+              >
+                <SelectTrigger id="toAcc" className="h-9 text-xs">
+                  <SelectValue>
+                    {toAccountCode ? (() => {
+                      const acc = accounts.find(a => a.code === toAccountCode);
+                      return acc ? `${acc.name} (৳${(acc.currentBalance || 0).toLocaleString()})` : toAccountCode;
+                    })() : "Select Destination"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {accounts.map((acc) => (
+                    <SelectItem key={acc.code} value={acc.code} className="text-xs">
+                      {acc.name} (৳{(acc.currentBalance || 0).toLocaleString()})
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {/* Client Due Bills Dropdown (When Receive Client Bill is chosen) */}
-        {isClientBillIncome && (
-          <div className="p-3.5 rounded-lg border border-emerald-200 bg-emerald-50/60 dark:bg-emerald-950/20 dark:border-emerald-900/50 space-y-2.5">
-            <div className="flex items-center justify-between text-xs font-semibold text-emerald-800 dark:text-emerald-300">
-              <span className="flex items-center gap-1.5">
-                <Receipt className="h-4 w-4 text-emerald-600" /> Select Due Client Bill
-              </span>
-              <span>{dueBills.length} Bill(s) Pending</span>
             </div>
-
-            <Select value={form.watch('billId')} onValueChange={handleSelectBill}>
-              <SelectTrigger className="bg-background">
-                <SelectValue placeholder={loadingBills ? "Loading due bills..." : "Choose a client bill to receive payment..."} />
-              </SelectTrigger>
-              <SelectContent className="max-h-60">
-                {dueBills.length === 0 ? (
-                  <div className="p-3 text-xs text-center text-muted-foreground">
-                    No pending due client bills found.
-                  </div>
-                ) : (
-                  dueBills.map((bill: any) => (
-                    <SelectItem key={bill._id} value={bill._id}>
-                      <div className="flex items-center justify-between w-full gap-4 text-xs">
-                        <span className="font-bold">{bill.invoiceNo}</span>
-                        <span className="truncate">{bill.clientName}</span>
-                        <span className="font-bold text-rose-600 dark:text-rose-400">
-                          Due: ৳{Math.round(bill.currentBillDue || (bill.gTotal - (bill.cashIn || 0))).toLocaleString()}
-                        </span>
-                      </div>
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-
-            {selectedBill && (
-              <div className="flex items-center justify-between text-xs bg-background/80 p-2 rounded border text-muted-foreground">
-                <span>Grand Total: <strong>৳{Math.round(selectedBill.gTotal).toLocaleString()}</strong></span>
-                <span>Paid so far: <strong>৳{Math.round(selectedBill.cashIn || 0).toLocaleString()}</strong></span>
-                <span className="text-emerald-700 font-bold">Remaining Due: ৳{Math.round(selectedBill.currentBillDue).toLocaleString()}</span>
-              </div>
-            )}
           </div>
-        )}
 
-        {/* Title */}
-        <FormField
-          control={form.control}
-          name="title"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Title / Payee / Client</FormLabel>
-              <FormControl>
-                <Input 
-                  placeholder={selectedType === 'expense' ? 'e.g. Office Rent April or Facebook Ads' : 'e.g. Client Payment or Project Income'} 
-                  {...field} 
-                  ref={(e) => {
-                    field.ref(e);
-                    titleRef.current = e;
-                  }}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+          <div className="space-y-1">
+            <Label htmlFor="transferTitle" className="text-xs font-semibold">Transfer Note / Description</Label>
+            <Input
+              id="transferTitle"
+              placeholder="e.g. Bank deposit from Cash drawer"
+              className="h-9 text-xs"
+              value={transferTitle}
+              onChange={(e) => setTransferTitle(e.target.value)}
+              required
+            />
+          </div>
 
-        {/* Amount */}
-        <FormField
-          control={form.control}
-          name="amount"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Amount (Tk)</FormLabel>
-              <FormControl>
-                <Input 
-                  type="number" 
-                  placeholder="Enter amount"
-                  {...field} 
-                  onChange={(e) => field.onChange(e.target.value === '' ? '' : Number(e.target.value))}
-                  ref={(e) => {
-                    field.ref(e);
-                    amountRef.current = e;
-                  }}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+          <div className="space-y-1">
+            <Label htmlFor="transferAmt" className="text-xs font-semibold">Transfer Amount (৳)</Label>
+            <Input
+              id="transferAmt"
+              type="number"
+              min="1"
+              step="any"
+              placeholder="0.00"
+              className="h-9 text-xs font-bold"
+              value={transferAmount}
+              onChange={(e) => setTransferAmount(e.target.value)}
+              required
+            />
+          </div>
 
-        {/* Description */}
-        <FormField
-          control={form.control}
-          name="description"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Description / Note (Optional)</FormLabel>
-              <FormControl>
-                <Textarea 
-                  placeholder="Additional payment details or remarks..." 
-                  {...field} 
-                  ref={(e) => {
-                    field.ref(e);
-                    descriptionRef.current = e;
-                  }}
-                  rows={2}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <Button ref={submitBtnRef} type="submit" className="w-full bg-primary text-primary-foreground font-bold" disabled={loading}>
-          {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {initialData ? 'Update Record' : `Record ${selectedType === 'expense' ? 'Expense' : 'Income'}`}
-        </Button>
-      </form>
-    </Form>
+          <Button
+            type="submit"
+            disabled={transferSubmitLoading}
+            className="w-full bg-primary text-primary-foreground font-bold h-9 text-xs mt-1"
+          >
+            {transferSubmitLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Execute Account Transfer
+          </Button>
+        </form>
+      )}
+    </div>
   );
 }

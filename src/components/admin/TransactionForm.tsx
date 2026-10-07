@@ -211,7 +211,13 @@ export function TransactionForm({ initialData, presetTab = 'transaction', onSucc
   };
 
   // When a due client bill is selected
-  const handleSelectBill = (billId: string) => {
+  const handleSelectBill = (billId: string | null) => {
+    if (!billId) {
+      setSelectedBill(null);
+      form.setValue('billId', '');
+      form.setValue('invoiceNo', '');
+      return;
+    }
     const bill = dueBills.find((b: any) => b._id === billId);
     if (bill) {
       setSelectedBill(bill);
@@ -228,7 +234,13 @@ export function TransactionForm({ initialData, presetTab = 'transaction', onSucc
   };
 
   // When a supplier bill is selected
-  const handleSelectSupplierBill = (billId: string) => {
+  const handleSelectSupplierBill = (billId: string | null) => {
+    if (!billId) {
+      setSelectedSupplierBill(null);
+      form.setValue('supplierBillId', '');
+      form.setValue('supplierId', '');
+      return;
+    }
     const supBill = dueSupplierBills.find((b: any) => b._id === billId);
     if (supBill) {
       setSelectedSupplierBill(supBill);

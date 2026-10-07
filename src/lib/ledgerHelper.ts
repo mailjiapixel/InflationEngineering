@@ -164,6 +164,8 @@ export async function syncBillsToLedger() {
     for (const bill of bills) {
       if (!bill.invoiceNo) continue;
 
+      const billDate = bill.date ? new Date(bill.date) : (bill.createdAt ? new Date(bill.createdAt) : new Date());
+
       // 1. Check AR Debit entry for Bill Generated
       const billDebitExists = await LedgerTransaction.findOne({
         account: arAccount._id,
@@ -178,8 +180,14 @@ export async function syncBillsToLedger() {
           bill.gTotal,
           `Bill Generated for ${bill.clientName}`,
           bill.invoiceNo,
-          bill.createdAt ? new Date(bill.createdAt) : new Date()
+          billDate
         );
+      } else if (billDebitExists && bill.gTotal > 0) {
+        // If the debit exists but has wrong/later date, sync the date to bill's actual creation date
+        if (new Date(billDebitExists.date).getTime() > billDate.getTime()) {
+          billDebitExists.date = billDate;
+          await billDebitExists.save();
+        }
       }
 
       // 2. Check Upfront payment if cashIn > 0
@@ -197,7 +205,7 @@ export async function syncBillsToLedger() {
             bill.cashIn,
             `Cash Paid Upfront for Bill ${bill.invoiceNo}`,
             bill.invoiceNo,
-            bill.createdAt ? new Date(bill.createdAt) : new Date()
+            billDate
           );
         }
 
@@ -214,11 +222,14 @@ export async function syncBillsToLedger() {
             bill.cashIn,
             `Upfront payment credit for Bill ${bill.invoiceNo}`,
             bill.invoiceNo,
-            bill.createdAt ? new Date(bill.createdAt) : new Date()
+            billDate
           );
         }
       }
     }
+
+    await recalculateLedgerBalance('AR');
+    await recalculateLedgerBalance('CASH');
   } catch (err) {
     console.error('[Ledger] Error syncing bills to ledger:', err);
   }

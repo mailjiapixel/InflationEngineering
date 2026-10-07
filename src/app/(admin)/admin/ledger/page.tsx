@@ -186,9 +186,12 @@ function AccountsLedgerContent() {
       return matchesSearch && matchesDate;
     })
     .sort((a, b) => {
-      const timeB = new Date(b.createdAt || b.date).getTime();
-      const timeA = new Date(a.createdAt || a.date).getTime();
-      return timeB - timeA;
+      const timeB = new Date(b.date || b.createdAt).getTime();
+      const timeA = new Date(a.date || a.createdAt).getTime();
+      if (timeB !== timeA) return timeB - timeA;
+      if (a.type === 'debit' && b.type === 'credit') return 1;
+      if (a.type === 'credit' && b.type === 'debit') return -1;
+      return String(b._id).localeCompare(String(a._id));
     });
 
   const ITEMS_PER_PAGE = 20;
@@ -343,10 +346,10 @@ function AccountsLedgerContent() {
                     <TableRow key={tx._id}>
                       <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                         <div className="font-semibold text-foreground">
-                          {format(new Date(tx.createdAt || tx.date), 'dd MMM yyyy')}
+                          {format(new Date(tx.date || tx.createdAt), 'dd MMM yyyy')}
                         </div>
                         <div className="text-[11px] text-muted-foreground">
-                          {format(new Date(tx.createdAt || tx.date), 'hh:mm:ss a')}
+                          {format(new Date(tx.date || tx.createdAt), 'hh:mm:ss a')}
                         </div>
                       </TableCell>
                       <TableCell className="font-semibold">{tx.account?.name}</TableCell>

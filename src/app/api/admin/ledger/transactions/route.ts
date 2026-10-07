@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import connectToDatabase from '@/lib/db';
 import LedgerTransaction from '@/models/LedgerTransaction';
-import { logLedgerTransaction, seedLedgerAccounts, cleanOrphanLedgerTransactions } from '@/lib/ledgerHelper';
+import { logLedgerTransaction, seedLedgerAccounts, cleanOrphanLedgerTransactions, syncBillsToLedger } from '@/lib/ledgerHelper';
 
 export async function GET(req: NextRequest) {
   try {
@@ -14,10 +14,11 @@ export async function GET(req: NextRequest) {
     await connectToDatabase();
     await seedLedgerAccounts();
     await cleanOrphanLedgerTransactions();
+    await syncBillsToLedger();
 
     const transactions = await LedgerTransaction.find()
       .populate('account')
-      .sort({ createdAt: -1, _id: -1 });
+      .sort({ date: -1, _id: -1 });
 
     return NextResponse.json(transactions);
   } catch (error: any) {

@@ -114,7 +114,7 @@ export async function POST(req: NextRequest) {
         }
         await bill.save();
 
-        let expense = await Expense.create({
+        const expense = await Expense.create({
           title,
           amount: numAmount,
           category: 'Receive Client Bill',
@@ -150,8 +150,8 @@ export async function POST(req: NextRequest) {
           console.error('Error logging client bill payment to ledger:', err);
         }
 
-        expense = await Expense.findById(expense._id).populate({ path: 'bill', strictPopulate: false });
-        return NextResponse.json({ ...expense.toObject(), billData: bill }, { status: 201 });
+        const populatedExpense = await Expense.findById(expense._id).populate({ path: 'bill', strictPopulate: false });
+        return NextResponse.json({ ...(populatedExpense ? populatedExpense.toObject() : expense.toObject()), billData: bill }, { status: 201 });
       }
     }
 
@@ -173,7 +173,7 @@ export async function POST(req: NextRequest) {
         supBill.status = newDue <= 0 ? 'Paid' : (newPaid > 0 ? 'Partially Paid' : 'Due');
         await supBill.save();
 
-        let expense = await Expense.create({
+        const expense = await Expense.create({
           title,
           amount: numAmount,
           category: category || 'Supplier Bill Payment',
@@ -208,12 +208,12 @@ export async function POST(req: NextRequest) {
           console.error('Error logging supplier bill payment to ledger:', err);
         }
 
-        expense = await Expense.findById(expense._id)
+        const populatedExpense = await Expense.findById(expense._id)
           .populate({ path: 'supplier', strictPopulate: false })
           .populate({ path: 'supplierBill', strictPopulate: false });
-        return NextResponse.json(expense, { status: 201 });
+        return NextResponse.json(populatedExpense || expense, { status: 201 });
       } else if (supplierId) {
-        let expense = await Expense.create({
+        const expense = await Expense.create({
           title,
           amount: numAmount,
           category: category || 'Supplier Bill Payment',
@@ -246,8 +246,8 @@ export async function POST(req: NextRequest) {
           console.error('Error logging supplier payment to ledger:', err);
         }
 
-        expense = await Expense.findById(expense._id).populate({ path: 'supplier', strictPopulate: false });
-        return NextResponse.json(expense, { status: 201 });
+        const populatedExpense = await Expense.findById(expense._id).populate({ path: 'supplier', strictPopulate: false });
+        return NextResponse.json(populatedExpense || expense, { status: 201 });
       }
     }
 

@@ -183,6 +183,10 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
     return url;
   };
 
+  const brandLogoUrl = settings?.logoUrl || settings?.logo || '/logo.webp';
+  const finalLogoUrl = getAbsoluteUrl(brandLogoUrl);
+  const finalSignUrl = getAbsoluteUrl('/assets/sign.png');
+
   const docType = bill.documentType || (bill.billNo ? 'supplier-bill' : 'bill');
 
   // Titles & Labels
@@ -317,16 +321,27 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
             border-bottom: 2px solid var(--border);
             padding-bottom: 10px;
             margin-bottom: 10px;
+            gap: 20px;
           }
           .brand-logo-container {
             display: flex;
             flex-direction: column;
+            flex: 1;
+            min-width: 0;
+          }
+          .header-brand-logo {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            justify-content: flex-start;
+            flex-shrink: 0;
           }
           .brand-logo-img {
-            max-height: 48px;
-            max-width: 180px;
+            height: 125px;
+            max-height: 135px;
+            max-width: 250px;
             object-fit: contain;
-            margin-bottom: 4px;
+            display: block;
           }
           .brand-logo {
             font-size: 15.5px;
@@ -498,6 +513,40 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
             color: var(--muted-foreground);
           }
 
+          /* ── Seal & Signature at Bottom of Each Page ── */
+          .page-sign-section {
+            display: flex;
+            justify-content: flex-end;
+            align-items: flex-end;
+            margin-top: auto;
+            padding-top: 8px;
+            padding-bottom: 6px;
+          }
+          .page-sign-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            min-width: 140px;
+          }
+          .page-sign-img {
+            height: 52px;
+            max-width: 130px;
+            object-fit: contain;
+            display: block;
+            margin-bottom: 2px;
+            mix-blend-mode: multiply;
+          }
+          .page-sign-label {
+            font-size: 10.5px;
+            font-weight: 600;
+            color: var(--muted-foreground);
+            border-top: 1px dashed #cbd5e1;
+            padding-top: 3px;
+            width: 100%;
+            letter-spacing: 0.02em;
+          }
+
           /* ── Bottom Page Bar ── */
           .page-bottom-bar {
             display: flex;
@@ -594,8 +643,11 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
                 <div class="brand-logo">${brandName}</div>
                 <div class="brand-details">
                   ${brandAddress ? `<div>${brandAddress}</div>` : ''}
-                  <div>Email: ${brandEmail} | Phone: ${brandPhone}</div>
+                  <div>${brandEmail ? `Email: ${brandEmail}` : ''}${brandEmail && brandPhone ? ' | ' : ''}${brandPhone ? `Phone: ${brandPhone}` : ''}</div>
                 </div>
+              </div>
+              <div class="header-brand-logo">
+                <img src="${finalLogoUrl}" alt="${brandName}" class="brand-logo-img" />
               </div>
             </div>
 
@@ -804,8 +856,8 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
             var totalsTpl = document.getElementById('tpl-totals');
             var sourceRows = Array.from(document.querySelectorAll('#source-tbody tr'));
 
-            // Optimal printable height per A4 page (~970px to fully use the page)
-            var MAX_PAGE_HEIGHT = 970;
+            // Optimal printable height per A4 page (~905px considering bottom signature and footer)
+            var MAX_PAGE_HEIGHT = 905;
 
             var currentPageIndex = 1;
             var currentPageDiv = null;
@@ -830,6 +882,15 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
               var tbody = document.createElement('tbody');
               table.appendChild(tbody);
               content.appendChild(table);
+
+              // Signature & Seal Watermark Section right before bottom bar on every page
+              var signSection = document.createElement('div');
+              signSection.className = 'page-sign-section';
+              signSection.innerHTML = '<div class="page-sign-box">' +
+                '<img src="' + ${JSON.stringify(finalSignUrl)} + '" alt="Seal & Signature" class="page-sign-img" />' +
+                '<div class="page-sign-label">Authorized Signature</div>' +
+                '</div>';
+              page.appendChild(signSection);
 
               // Bottom Page Bar
               var bottomBar = document.createElement('div');
@@ -908,16 +969,27 @@ export async function generateBillPDF(bill: any, settings: any, mode: 'download'
           }
 
           function init() {
+            var signPreload = new Image();
+            signPreload.src = ${JSON.stringify(finalSignUrl)};
             var logo = document.querySelector('.brand-logo-img');
-            if (logo && !logo.complete) {
-              logo.onload = function() {
-                paginateDocument();
-                schedulePrint();
+
+            var pending = [];
+            if (logo && !logo.complete) pending.push(logo);
+            if (!signPreload.complete) pending.push(signPreload);
+
+            if (pending.length > 0) {
+              var count = 0;
+              var onDone = function() {
+                count++;
+                if (count >= pending.length) {
+                  paginateDocument();
+                  schedulePrint();
+                }
               };
-              logo.onerror = function() {
-                paginateDocument();
-                schedulePrint();
-              };
+              pending.forEach(function(img) {
+                img.onload = onDone;
+                img.onerror = onDone;
+              });
             } else {
               paginateDocument();
               schedulePrint();
@@ -993,6 +1065,18 @@ export async function generatePaymentReceiptPDF(
     mutedForeground = getColor('--muted-foreground', mutedForeground);
     foreground = getColor('--foreground', foreground);
   }
+
+  const getAbsoluteUrl = (url: string) => {
+    if (!url) return '';
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) return url;
+    if (typeof window !== 'undefined') {
+      return `${window.location.origin}${url.startsWith('/') ? '' : '/'}${url}`;
+    }
+    return url;
+  };
+  const brandLogoUrl = settings?.logoUrl || settings?.logo || '/logo.webp';
+  const finalLogoUrl = getAbsoluteUrl(brandLogoUrl);
+  const finalSignUrl = getAbsoluteUrl('/assets/sign.png');
 
   const invoiceId = String(bill.invoiceNo || bill._id || '').toUpperCase();
   const billDate = bill.date ? new Date(bill.date) : new Date();
@@ -1142,14 +1226,28 @@ export async function generatePaymentReceiptPDF(
 
     /* Header */
     .receipt-header {
-      display: flex; justify-content: space-between; align-items: flex-start;
-      padding: 16px 20px 12px 20px;
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 14px 20px 12px 20px;
       border-bottom: 3px solid ${primary};
       background: linear-gradient(135deg, ${primary}12 0%, transparent 60%);
+      gap: 16px;
+    }
+    .receipt-logo-container {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      flex-shrink: 0;
+    }
+    .receipt-logo-img {
+      height: 100px;
+      max-height: 115px;
+      max-width: 220px;
+      object-fit: contain;
+      display: block;
     }
 
-    .brand-name { font-size: 15px; font-weight: 800; color: ${primary}; letter-spacing: 0.04em; text-transform: uppercase; }
-    .brand-sub { font-size: 10px; color: ${mutedForeground}; line-height: 1.4; margin-top: 2px; }
+    .brand-name { font-size: 16px; font-weight: 800; color: ${primary}; letter-spacing: 0.04em; text-transform: uppercase; }
+    .brand-sub { font-size: 11px; color: ${mutedForeground}; line-height: 1.4; margin-top: 2px; }
 
     /* Client & Bill Info */
     .info-row {
@@ -1278,7 +1376,7 @@ export async function generatePaymentReceiptPDF(
     <div class="receipt-card" style="position:relative;">
       <div class="watermark">Receipt</div>
 
-      <!-- Header: Left Brand Info, Right Blank Space for Pad Logo -->
+      <!-- Header: Left Brand Info, Right Branding Logo -->
       <div class="receipt-header">
         <div>
           <div class="brand-name">${brandName}</div>
@@ -1287,8 +1385,10 @@ export async function generatePaymentReceiptPDF(
             ${brandPhone ? 'Phone: ' + brandPhone : ''} ${brandPhone && brandEmail ? '&nbsp;|&nbsp; ' : ''}${brandEmail ? 'Email: ' + brandEmail : ''}
           </div>
         </div>
-        <!-- Blank Top Right Corner for physical pad logo -->
-        <div style="min-width: 150px; min-height: 40px;"></div>
+        <!-- Top Right Corner Branding Logo -->
+        <div class="receipt-logo-container">
+          <img src="${finalLogoUrl}" alt="${brandName}" class="receipt-logo-img" />
+        </div>
       </div>
 
       <!-- Info Row: Left = Money Receipt Meta, Right = Received From -->
@@ -1413,10 +1513,11 @@ export async function generatePaymentReceiptPDF(
         <div>
           <div class="sig-line">Received By</div>
         </div>
-        <div style="text-align:center;">
-          <div class="stamp-circle">Official<br>Seal</div>
+        <div style="display: flex; flex-direction: column; align-items: center; text-align: center;">
+          <img src="${finalSignUrl}" alt="Official Seal & Sign" style="height: 52px; max-width: 130px; object-fit: contain; display: block; margin-bottom: 2px; mix-blend-mode: multiply;" />
+          <div class="sig-line" style="margin-top: 0;">Authorized Signature</div>
         </div>
-        <div style="text-align:right;">
+        <div style="text-align: right;">
           <div class="sig-line">Client Signature</div>
         </div>
       </div>
@@ -1424,9 +1525,24 @@ export async function generatePaymentReceiptPDF(
   </div>
 
   <script>
-    if (document.fonts && document.fonts.ready) {
-      document.fonts.ready.then(function() { setTimeout(function() {}, 200); });
+    function triggerReceiptPrint() {
+      if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(function() {
+          setTimeout(function() { window.focus(); window.print(); }, 250);
+        });
+      } else {
+        setTimeout(function() { window.focus(); window.print(); }, 400);
+      }
     }
+    window.addEventListener('load', function() {
+      var logo = document.querySelector('.receipt-logo-img');
+      if (logo && !logo.complete) {
+        logo.onload = triggerReceiptPrint;
+        logo.onerror = triggerReceiptPrint;
+      } else {
+        triggerReceiptPrint();
+      }
+    });
   </script>
 </body>
 </html>`;

@@ -9,6 +9,18 @@ export async function generateInvoicePDF(orderOrOrders: any | any[], settings: a
   const brandEmail = settings?.contact?.email || "";
   const brandPhone = settings?.contact?.phone || "";
   const brandAddress = settings?.contact?.address || "";
+  const brandLogoUrl = settings?.logoUrl || settings?.logo || "/logo.webp";
+
+  const getAbsoluteUrl = (url: string) => {
+    if (!url) return '';
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) return url;
+    if (typeof window !== 'undefined') {
+      return `${window.location.origin}${url.startsWith('/') ? '' : '/'}${url}`;
+    }
+    return url;
+  };
+  const finalLogoUrl = getAbsoluteUrl(brandLogoUrl);
+  const finalSignUrl = getAbsoluteUrl('/assets/sign.png');
 
   // Dynamic colors based on shadcn/tailwind config (HSL values usually)
   let primary = '#00D1B2';
@@ -59,14 +71,15 @@ export async function generateInvoicePDF(orderOrOrders: any | any[], settings: a
       <div class="invoice-container" style="${index < orders.length - 1 ? 'page-break-after: always; break-after: page;' : ''}">
         <div class="header">
           <div class="brand-logo-container">
+            <h1 class="invoice-title">INVOICE</h1>
             <div class="brand-logo">${brandName}</div>
             <div class="brand-details">
               ${brandAddress ? `<div>${brandAddress}</div>` : ''}
-              <div>Email: ${brandEmail} | Phone: ${brandPhone}</div>
+              <div>${brandEmail ? `Email: ${brandEmail}` : ''}${brandEmail && brandPhone ? ' | ' : ''}${brandPhone ? `Phone: ${brandPhone}` : ''}</div>
             </div>
           </div>
-          <div>
-            <h1 class="invoice-title">INVOICE</h1>
+          <div class="header-brand-logo">
+            <img src="${finalLogoUrl}" alt="${brandName}" class="brand-logo-img" />
           </div>
         </div>
 
@@ -149,6 +162,13 @@ export async function generateInvoicePDF(orderOrOrders: any | any[], settings: a
             </div>
           </div>
         </div>
+
+        <div style="display: flex; justify-content: flex-end; margin-top: 24px;">
+          <div style="display: flex; flex-direction: column; align-items: center; text-align: center; min-width: 140px;">
+            <img src="${finalSignUrl}" alt="Seal & Signature" style="height: 52px; max-width: 130px; object-fit: contain; display: block; margin-bottom: 2px; mix-blend-mode: multiply;" />
+            <div style="font-size: 10.5px; font-weight: 600; color: var(--muted-foreground); border-top: 1px dashed #cbd5e1; padding-top: 3px; width: 100%; letter-spacing: 0.02em;">Authorized Signature</div>
+          </div>
+        </div>
       </div>
     `;
   }).join('');
@@ -196,36 +216,50 @@ export async function generateInvoicePDF(orderOrOrders: any | any[], settings: a
             justify-content: space-between;
             align-items: flex-start;
             border-bottom: 2px solid var(--border);
-            padding-bottom: 20px;
-            margin-bottom: 20px;
+            padding-bottom: 16px;
+            margin-bottom: 16px;
+            gap: 16px;
           }
           .brand-logo-container {
             display: flex;
             flex-direction: column;
+            flex: 1;
+          }
+          .header-brand-logo {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            justify-content: flex-start;
+            flex-shrink: 0;
           }
           .brand-logo-img {
-            max-height: 60px;
-            max-width: 220px;
+            height: 125px;
+            max-height: 135px;
+            max-width: 250px;
             object-fit: contain;
-            margin-bottom: 5px;
+            display: block;
           }
           .brand-logo {
-            font-size: 24px;
+            font-size: 16px;
             font-weight: 700;
             color: var(--primary);
             text-transform: uppercase;
-            margin-bottom: 5px;
+            margin-bottom: 3px;
+            letter-spacing: 0.04em;
           }
           .brand-details {
-            font-size: 12px;
+            font-size: 11px;
             color: var(--muted-foreground);
+            line-height: 1.35;
           }
           .invoice-title {
-            font-size: 28px;
-            font-weight: 700;
-            color: var(--border);
-            text-align: right;
-            margin: 0;
+            font-size: 26px;
+            font-weight: 800;
+            color: var(--foreground);
+            text-align: left;
+            margin: 0 0 3px 0;
+            letter-spacing: -0.025em;
+            text-transform: uppercase;
           }
           .details-grid {
             display: grid;

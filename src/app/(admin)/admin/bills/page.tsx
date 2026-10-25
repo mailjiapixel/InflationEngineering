@@ -156,6 +156,7 @@ function ClientBillsContent() {
   const [prevDue, setPrevDue] = useState<number>(0);
   const [cashIn, setCashIn] = useState<number>(0);
   const [expectedReceivableDate, setExpectedReceivableDate] = useState('');
+  const [vatTaxIncluded, setVatTaxIncluded] = useState<boolean>(true);
 
   // Auto suggestion states
   const [suggestions, setSuggestions] = useState<any[]>([]);
@@ -427,6 +428,7 @@ function ClientBillsContent() {
         currentBillDue,
         status: calculatedStatus,
         expectedReceivableDate: calculatedStatus === 'Due' ? expectedReceivableDate : undefined,
+        vatTaxIncluded,
         documentType: 'bill'
       };
 
@@ -472,6 +474,7 @@ function ClientBillsContent() {
     setPrevDue(0);
     setCashIn(0);
     setExpectedReceivableDate('');
+    setVatTaxIncluded(true);
     setSelectedProductVariants({});
     setProductSearchTerm('');
     setProductPickerOpen(false);
@@ -787,6 +790,7 @@ function ClientBillsContent() {
                               setPrevDue(bill.prevDue || 0);
                               setCashIn(bill.cashIn || 0);
                               setExpectedReceivableDate(bill.expectedReceivableDate ? format(new Date(bill.expectedReceivableDate), 'yyyy-MM-dd') : '');
+                              setVatTaxIncluded(bill.vatTaxIncluded !== undefined ? bill.vatTaxIncluded : true);
                               setIsCreateOpen(true);
                             }}
                           >
@@ -1107,18 +1111,30 @@ function ClientBillsContent() {
                   </div>
                 </div>
 
-                {calculatedStatus === 'Due' && (
-                  <div className="space-y-2">
-                    <Label htmlFor="expectedReceivableDate">Expected Date of Receivable *</Label>
-                    <Input
-                      id="expectedReceivableDate"
-                      type="date"
-                      value={expectedReceivableDate}
-                      onChange={(e) => setExpectedReceivableDate(e.target.value)}
-                      required
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                  {calculatedStatus === 'Due' ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="expectedReceivableDate">Expected Date of Receivable *</Label>
+                      <Input
+                        id="expectedReceivableDate"
+                        type="date"
+                        value={expectedReceivableDate}
+                        onChange={(e) => setExpectedReceivableDate(e.target.value)}
+                        required
+                      />
+                    </div>
+                  ) : <div />}
+                  <div className={`flex items-center space-x-2 ${calculatedStatus === 'Due' ? 'pt-6' : 'pt-2'}`}>
+                    <Checkbox
+                      id="vatTaxIncluded"
+                      checked={vatTaxIncluded}
+                      onCheckedChange={(checked) => setVatTaxIncluded(checked === true)}
                     />
+                    <Label htmlFor="vatTaxIncluded" className="text-sm font-medium leading-none cursor-pointer">
+                      VAT & Tax Included
+                    </Label>
                   </div>
-                )}
+                </div>
               </div>
 
               {/* Summary calculations view */}
@@ -1326,6 +1342,10 @@ function ClientBillsContent() {
                         <span className="text-orange-600">Due by: {format(new Date(selectedBill.expectedReceivableDate), 'dd MMM yyyy')}</span>
                       </div>
                     )}
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="font-semibold text-muted-foreground">VAT & Tax:</span>
+                      <span className="font-medium">{selectedBill.vatTaxIncluded !== false ? 'Included' : 'Excluded'}</span>
+                    </div>
                   </div>
                 </div>
 

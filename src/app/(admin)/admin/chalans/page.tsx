@@ -454,6 +454,7 @@ function ClientChalansContent() {
           cashIn: 0,
           currentBillDue: chalan.total,
           status: 'Due',
+          vatTaxIncluded: chalan.vatTaxIncluded !== undefined ? chalan.vatTaxIncluded : true,
           documentType: 'bill',
           convertedFrom: chalan._id
         };

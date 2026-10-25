@@ -165,6 +165,7 @@ function ClientOffersContent() {
   const [cbPrevDue, setCbPrevDue] = useState<number>(0);
   const [cbCashIn, setCbCashIn] = useState<number>(0);
   const [cbExpectedDate, setCbExpectedDate] = useState('');
+  const [cbVatTaxIncluded, setCbVatTaxIncluded] = useState<boolean>(true);
   const [cbPhoneError, setCbPhoneError] = useState('');
   const [cbProductPickerOpen, setCbProductPickerOpen] = useState(false);
   const [cbProductSearchTerm, setCbProductSearchTerm] = useState('');
@@ -509,6 +510,7 @@ function ClientOffersContent() {
           cashIn: 0,
           currentBillDue: offer.total,
           status: 'Due',
+          vatTaxIncluded: offer.vatTaxIncluded !== undefined ? offer.vatTaxIncluded : true,
           documentType: 'chalan',
           convertedFrom: offer._id
         };
@@ -559,6 +561,7 @@ function ClientOffersContent() {
     setCbPrevDue(0);
     setCbCashIn(0);
     setCbExpectedDate('');
+    setCbVatTaxIncluded(offer.vatTaxIncluded !== undefined ? offer.vatTaxIncluded : true);
     setCbPhoneError('');
     setCbSelectedVariants({});
     setCbProductSearchTerm('');
@@ -580,6 +583,7 @@ function ClientOffersContent() {
     setCbPrevDue(0);
     setCbCashIn(0);
     setCbExpectedDate('');
+    setCbVatTaxIncluded(true);
     setCbPhoneError('');
     setCbSelectedVariants({});
     setCbProductSearchTerm('');
@@ -629,6 +633,7 @@ function ClientOffersContent() {
         currentBillDue: cbCurrentDue,
         status: cbCalculatedStatus,
         expectedReceivableDate: cbCalculatedStatus === 'Due' ? cbExpectedDate : undefined,
+        vatTaxIncluded: cbVatTaxIncluded,
         documentType: 'bill',
         convertedFrom: convertingFromOffer?._id
       };
@@ -1563,12 +1568,24 @@ function ClientOffersContent() {
                     </div>
                   </div>
                 </div>
-                {cbCalculatedStatus === 'Due' && (
-                  <div className="space-y-2">
-                    <Label htmlFor="cb-expectedDate">Expected Date of Receivable *</Label>
-                    <input id="cb-expectedDate" type="date" value={cbExpectedDate} onChange={(e) => setCbExpectedDate(e.target.value)} required className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                  {cbCalculatedStatus === 'Due' ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="cb-expectedDate">Expected Date of Receivable *</Label>
+                      <input id="cb-expectedDate" type="date" value={cbExpectedDate} onChange={(e) => setCbExpectedDate(e.target.value)} required className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                    </div>
+                  ) : <div />}
+                  <div className={`flex items-center space-x-2 ${cbCalculatedStatus === 'Due' ? 'pt-6' : 'pt-2'}`}>
+                    <Checkbox
+                      id="cb-vatTaxIncluded"
+                      checked={cbVatTaxIncluded}
+                      onCheckedChange={(checked) => setCbVatTaxIncluded(checked === true)}
+                    />
+                    <Label htmlFor="cb-vatTaxIncluded" className="text-sm font-medium leading-none cursor-pointer">
+                      VAT & Tax Included
+                    </Label>
                   </div>
-                )}
+                </div>
               </div>
 
               {/* Summary */}

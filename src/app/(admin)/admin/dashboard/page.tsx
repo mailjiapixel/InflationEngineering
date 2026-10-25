@@ -72,13 +72,14 @@ export default function AdminDashboard() {
 
   const [debouncedDateRange, setDebouncedDateRange] = useState(dateRange);
 
-  // Debounce date range changes
+  // Debounce date range changes only when values actually change
   useEffect(() => {
+    if (debouncedDateRange.from === dateRange.from && debouncedDateRange.to === dateRange.to) return;
     const timer = setTimeout(() => {
       setDebouncedDateRange(dateRange);
-    }, 500);
+    }, 350);
     return () => clearTimeout(timer);
-  }, [dateRange]);
+  }, [dateRange.from, dateRange.to]);
 
   const handleDateChange = (key: 'from' | 'to', value: string) => {
     const newDate = parseISO(value);

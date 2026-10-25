@@ -1627,6 +1627,11 @@ function ClientBillsContent() {
                           <div className="space-y-1">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-bold text-sm text-foreground">{inst.description || `Payment Step #${inst.installmentNo}`}</span>
+                              {idx === 0 && (
+                                <Badge variant="outline" className="text-[10px] bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300 border-green-200 py-0 font-bold">
+                                  Latest
+                                </Badge>
+                              )}
                               <Badge variant="outline" className="text-[11px] bg-muted/50 py-0">
                                 {inst.method || 'Cash'}
                               </Badge>
@@ -1655,13 +1660,22 @@ function ClientBillsContent() {
                             size="sm"
                             className="h-8 text-xs font-bold text-emerald-600 border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
                             onClick={() => {
+                              const chronologicalPayments = historyData?.installments
+                                ? [...historyData.installments]
+                                    .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                                    .map((i: any) => ({ _id: i.txId, amount: i.amount, date: i.date }))
+                                : [];
+
                               generatePaymentReceiptPDF(
-                                selectedHistoryBill,
+                                {
+                                  ...selectedHistoryBill,
+                                  payments: chronologicalPayments
+                                },
                                 settings,
                                 inst.amount,
                                 inst.date,
                                 inst.txId,
-                                inst.installmentNo === 1 && selectedHistoryBill.cashIn === inst.amount
+                                false
                               );
                             }}
                             title="Print receipt for this installment"

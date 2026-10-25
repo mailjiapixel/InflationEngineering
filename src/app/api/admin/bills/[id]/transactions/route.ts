@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import connectToDatabase from '@/lib/db';
 import Bill from '@/models/Bill';
 import LedgerTransaction from '@/models/LedgerTransaction';
+import LedgerAccount from '@/models/LedgerAccount';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -14,6 +15,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const { id } = await params;
     await connectToDatabase();
+    void LedgerAccount;
 
     const bill = await Bill.findById(id).lean();
     if (!bill) {
@@ -74,20 +76,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       });
     }
 
+    // Sort with latest installment on top
+    installments.reverse();
+
     return NextResponse.json({
-      bill: {
-        _id: bill._id,
-        invoiceNo: bill.invoiceNo,
-        clientName: bill.clientName,
-        clientPhone: bill.clientPhone,
-        clientAddress: bill.clientAddress,
-        date: bill.date,
-        gTotal: bill.gTotal,
-        cashIn: bill.cashIn,
-        currentBillDue: bill.currentBillDue,
-        status: bill.status,
-        expectedReceivableDate: bill.expectedReceivableDate
-      },
+      bill,
       installments,
       rawTransactions: transactions
     });

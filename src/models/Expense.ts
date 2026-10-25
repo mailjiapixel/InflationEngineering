@@ -44,6 +44,9 @@ const ExpenseSchema: Schema<IExpense> = new Schema(
   { timestamps: true }
 );
 
+ExpenseSchema.index({ date: -1, type: 1 });
+ExpenseSchema.index({ category: 1, date: -1 });
+
 if (process.env.NODE_ENV === 'development' && mongoose.models.Expense) {
   delete (mongoose.models as any).Expense;
 }

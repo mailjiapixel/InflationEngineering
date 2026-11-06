@@ -193,7 +193,9 @@ export async function syncBillsToLedger() {
       // 2. Check Upfront payment if cashIn > 0
       if (bill.cashIn > 0) {
         const bankAccount = await LedgerAccount.findOne({ code: 'BANK' });
-        const paymentAccountIds = [cashAccount._id, bankAccount?._id].filter(Boolean);
+        const paymentAccountIds: any[] = [];
+        if (cashAccount?._id) paymentAccountIds.push(cashAccount._id);
+        if (bankAccount?._id) paymentAccountIds.push(bankAccount._id);
 
         // Find all payment debit transactions already logged for this bill (in CASH or BANK)
         const existingPaymentTxs = await LedgerTransaction.find({

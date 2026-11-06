@@ -192,34 +192,34 @@ export async function syncBillsToLedger() {
 
       // 2. Check Upfront payment if cashIn > 0
       if (bill.cashIn > 0) {
-        const cashDebitExists = await LedgerTransaction.findOne({
-          account: cashAccount._id,
+        const bankAccount = await LedgerAccount.findOne({ code: 'BANK' });
+        const paymentAccountIds = [cashAccount._id, bankAccount?._id].filter(Boolean);
+
+        // Find all payment debit transactions already logged for this bill (in CASH or BANK)
+        const existingPaymentTxs = await LedgerTransaction.find({
+          account: { $in: paymentAccountIds },
           reference: bill.invoiceNo,
-          type: 'debit'
+          type: 'debit',
+          description: { $not: /Bill Generated/i }
         });
 
-        if (!cashDebitExists) {
+        const totalAlreadyLogged = existingPaymentTxs.reduce((sum, tx) => sum + (tx.amount || 0), 0);
+        const unloggedCash = (bill.cashIn || 0) - totalAlreadyLogged;
+
+        if (unloggedCash > 0) {
           await logLedgerTransaction(
             'CASH',
             'debit',
-            bill.cashIn,
+            unloggedCash,
             `Cash Paid Upfront for Bill ${bill.invoiceNo}`,
             bill.invoiceNo,
             billDate
           );
-        }
 
-        const arCreditExists = await LedgerTransaction.findOne({
-          account: arAccount._id,
-          reference: bill.invoiceNo,
-          type: 'credit'
-        });
-
-        if (!arCreditExists) {
           await logLedgerTransaction(
             'AR',
             'credit',
-            bill.cashIn,
+            unloggedCash,
             `Upfront payment credit for Bill ${bill.invoiceNo}`,
             bill.invoiceNo,
             billDate
